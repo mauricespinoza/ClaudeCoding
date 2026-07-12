@@ -8,6 +8,7 @@ import { TaskModal } from './components/TaskModal.jsx'
 import { ProjectsTab } from './components/ProjectsTab.jsx'
 import { ProjectDetailPanel } from './components/ProjectDetailPanel.jsx'
 import { CalendarGanttTab } from './components/CalendarGanttTab.jsx'
+import { BackupControls } from './components/BackupControls.jsx'
 
 const TABS = [
   { key: 'tasks', label: 'Tareas', icon: ClipboardList },
@@ -113,12 +114,22 @@ export default function App() {
     [state.projects],
   )
 
+  // Cargar un respaldo es una acción explícita y destructiva: se escribe de
+  // inmediato con los datos recién importados (el efecto de persistencia
+  // debounced todavía no corrió con el nuevo estado en este punto).
+  const handleBackupImported = async (data) => {
+    await Promise.all([saveProjects(data.projects), saveTasks(data.tasks), saveMeta(data.meta)])
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="border-b border-gray-200 bg-white">
-        <div className="mx-auto max-w-5xl px-4 py-3">
-          <h1 className="text-lg font-semibold text-gray-900">Gestor Académico</h1>
-          <p className="text-xs text-gray-500">Tareas y proyectos — geología estructural</p>
+        <div className="mx-auto flex max-w-5xl items-start justify-between px-4 py-3">
+          <div>
+            <h1 className="text-lg font-semibold text-gray-900">Gestor Académico</h1>
+            <p className="text-xs text-gray-500">Tareas y proyectos — geología estructural</p>
+          </div>
+          {state.hydrated && <BackupControls state={state} dispatch={dispatch} onImported={handleBackupImported} />}
         </div>
         <nav className="mx-auto flex max-w-5xl gap-1 px-4">
           {TABS.map(({ key, label, icon: Icon }) => (
