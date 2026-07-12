@@ -176,6 +176,46 @@ export function appReducer(state, action) {
         })),
       }
 
+    case 'DELETE_PROJECT':
+      return {
+        ...state,
+        projects: state.projects.filter((p) => p.id !== action.payload.id),
+        // Las tareas del proyecto quedan sueltas (projectId: null) en vez de
+        // borrarse en cascada — perder tareas por accidente es peor que
+        // dejarlas sin proyecto.
+        tasks: state.tasks.map((t) =>
+          t.projectId === action.payload.id ? touch({ ...t, projectId: null, activity: null }) : t,
+        ),
+      }
+
+    // Inserción en bloque de las actividades/tareas aceptadas desde la
+    // revisión de sugerencias de IA (ARQUITECTURA.md §5, paso 4): una sola
+    // acción -> una sola escritura debounced de projects y de tasks.
+    case 'INSERT_AI_SUGGESTIONS': {
+      const { projectId, activities } = action.payload
+      const newActivityNames = activities.map((a) => a.name)
+      const newTasks = activities.flatMap((activity) =>
+        activity.tasks.map((t) => {
+          const task = emptyTask({
+            important: t.important,
+            urgent: t.urgent,
+            projectId,
+            activity: activity.name,
+          })
+          return { ...task, name: t.name, description: t.description ?? '', deadline: t.suggestedDeadline ?? null }
+        }),
+      )
+
+      return {
+        ...state,
+        projects: updateProjectById(state.projects, projectId, (p) => ({
+          ...p,
+          activityOrder: [...p.activityOrder, ...newActivityNames.filter((n) => !p.activityOrder.includes(n))],
+        })),
+        tasks: [...state.tasks, ...newTasks],
+      }
+    }
+
     default:
       return state
   }

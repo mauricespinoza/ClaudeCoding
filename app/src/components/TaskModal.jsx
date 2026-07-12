@@ -239,6 +239,21 @@ export function TaskModal({ task, projects, onClose, onSave, onDelete, dispatch 
             </div>
           )}
 
+          <div className="flex gap-4">
+            <label className="flex items-center gap-1.5 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={draft.important}
+                onChange={(e) => patch({ important: e.target.checked })}
+              />
+              Importante
+            </label>
+            <label className="flex items-center gap-1.5 text-sm text-gray-700">
+              <input type="checkbox" checked={draft.urgent} onChange={(e) => patch({ urgent: e.target.checked })} />
+              Urgente
+            </label>
+          </div>
+
           <div>
             <div className="mb-1 flex items-center justify-between">
               <label className="text-xs font-medium text-gray-600">Estado</label>

@@ -2,9 +2,11 @@ import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { CalendarDays, ClipboardList, FolderKanban } from 'lucide-react'
 import { appReducer, initialState } from './reducer.js'
 import { loadAll, saveProjects, saveTasks, saveMeta, createDebouncedWriter } from './storage.js'
-import { emptyTask } from './model.js'
+import { emptyTask, emptyProject } from './model.js'
 import { EisenhowerMatrix } from './components/EisenhowerMatrix.jsx'
 import { TaskModal } from './components/TaskModal.jsx'
+import { ProjectsTab } from './components/ProjectsTab.jsx'
+import { ProjectDetailPanel } from './components/ProjectDetailPanel.jsx'
 
 const TABS = [
   { key: 'tasks', label: 'Tareas', icon: ClipboardList },
@@ -25,6 +27,7 @@ export default function App() {
   const [state, dispatch] = useReducer(appReducer, initialState)
   const [activeTab, setActiveTab] = useState('tasks')
   const [openTask, setOpenTask] = useState(null) // { task, isNew }
+  const [openProject, setOpenProject] = useState(null) // { project, isNew }
 
   const projectsWriter = useRef(createDebouncedWriter(saveProjects))
   const tasksWriter = useRef(createDebouncedWriter(saveTasks))
@@ -94,6 +97,25 @@ export default function App() {
     await tasksWriter.current.flush()
   }
 
+  const handleOpenProject = (project) => setOpenProject({ project, isNew: false })
+
+  const handleCreateProject = () => setOpenProject({ project: emptyProject(), isNew: true })
+
+  const handleDeleteProject = async (id) => {
+    dispatch({ type: 'DELETE_PROJECT', payload: { id } })
+    setOpenProject(null)
+    await Promise.all([projectsWriter.current.flush(), tasksWriter.current.flush()])
+  }
+
+  // Nueva tarea disparada desde dentro del detalle de un proyecto: queda
+  // preasignada a ese proyecto y a la actividad sobre la que se hizo click.
+  const handleCreateTaskInProject = (project, activityName) => {
+    setOpenTask({
+      task: emptyTask({ projectId: project.id, activity: activityName }),
+      isNew: true,
+    })
+  }
+
   const projectOptions = useMemo(
     () => state.projects.filter((p) => !p.archived),
     [state.projects],
@@ -139,11 +161,31 @@ export default function App() {
                 onQuickVoiceCreate={handleQuickVoiceCreate}
               />
             )}
-            {activeTab === 'projects' && <ComingSoon label="La pestaña de Proyectos" />}
+            {activeTab === 'projects' && (
+              <ProjectsTab
+                projects={state.projects}
+                tasks={state.tasks}
+                onOpenProject={handleOpenProject}
+                onCreateProject={handleCreateProject}
+              />
+            )}
             {activeTab === 'calendar' && <ComingSoon label="Calendario / Gantt" />}
           </>
         )}
       </main>
+
+      {openProject && (
+        <ProjectDetailPanel
+          project={openProject.project}
+          isNew={openProject.isNew}
+          tasks={state.tasks}
+          dispatch={dispatch}
+          onClose={() => setOpenProject(null)}
+          onDelete={handleDeleteProject}
+          onOpenTask={handleOpenTask}
+          onCreateTask={handleCreateTaskInProject}
+        />
+      )}
 
       {openTask && (
         <TaskModal
