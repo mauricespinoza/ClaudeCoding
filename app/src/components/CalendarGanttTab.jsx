@@ -1,14 +1,6 @@
 import { useState } from 'react'
 import { CalendarView } from './CalendarView.jsx'
-
-function GanttComingSoon() {
-  return (
-    <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 text-gray-400">
-      <p className="text-sm">La vista Gantt llega en la Fase 5 del build.</p>
-      <p className="mt-1 text-xs">Ver plan de fases en ARQUITECTURA.md</p>
-    </div>
-  )
-}
+import { GanttView } from './GanttView.jsx'
 
 export function CalendarGanttTab({ tasks, projects, onOpenTask, onOpenProject }) {
   const [subView, setSubView] = useState('calendar')
@@ -36,7 +28,7 @@ export function CalendarGanttTab({ tasks, projects, onOpenTask, onOpenProject })
       {subView === 'calendar' ? (
         <CalendarView tasks={tasks} projects={projects} onOpenTask={onOpenTask} onOpenProject={onOpenProject} />
       ) : (
-        <GanttComingSoon />
+        <GanttView tasks={tasks} projects={projects} onOpenTask={onOpenTask} />
       )}
     </div>
   )
