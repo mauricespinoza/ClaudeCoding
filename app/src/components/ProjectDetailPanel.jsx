@@ -5,6 +5,7 @@ import { PROJECT_COLOR_TAGS, projectCompletion } from '../model.js'
 import { requestAISuggestions } from '../aiSuggest.js'
 import { TaskCard } from './TaskCard.jsx'
 import { AISuggestionsReview } from './AISuggestionsReview.jsx'
+import { IcsExportButton } from './IcsExportButton.jsx'
 
 const IMPORTANCE_OPTIONS = [
   { value: 1, label: 'Baja' },
@@ -137,6 +138,7 @@ export function ProjectDetailPanel({ project, tasks, isNew, dispatch, onClose, o
                 onChange={(e) => patch({ deadline: e.target.value || null })}
                 className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
               />
+              <IcsExportButton entity={draft} className="mt-1.5" />
             </div>
           </div>
 

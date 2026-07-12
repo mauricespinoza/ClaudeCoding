@@ -7,21 +7,13 @@ import { EisenhowerMatrix } from './components/EisenhowerMatrix.jsx'
 import { TaskModal } from './components/TaskModal.jsx'
 import { ProjectsTab } from './components/ProjectsTab.jsx'
 import { ProjectDetailPanel } from './components/ProjectDetailPanel.jsx'
+import { CalendarGanttTab } from './components/CalendarGanttTab.jsx'
 
 const TABS = [
   { key: 'tasks', label: 'Tareas', icon: ClipboardList },
   { key: 'projects', label: 'Proyectos', icon: FolderKanban },
   { key: 'calendar', label: 'Calendario / Gantt', icon: CalendarDays },
 ]
-
-function ComingSoon({ label }) {
-  return (
-    <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 text-gray-400">
-      <p className="text-sm">{label} llega en una fase posterior del build.</p>
-      <p className="text-xs mt-1">Ver plan de fases en ARQUITECTURA.md</p>
-    </div>
-  )
-}
 
 export default function App() {
   const [state, dispatch] = useReducer(appReducer, initialState)
@@ -169,7 +161,14 @@ export default function App() {
                 onCreateProject={handleCreateProject}
               />
             )}
-            {activeTab === 'calendar' && <ComingSoon label="Calendario / Gantt" />}
+            {activeTab === 'calendar' && (
+              <CalendarGanttTab
+                tasks={state.tasks}
+                projects={state.projects}
+                onOpenTask={handleOpenTask}
+                onOpenProject={handleOpenProject}
+              />
+            )}
           </>
         )}
       </main>

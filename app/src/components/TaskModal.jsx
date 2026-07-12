@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Paperclip, Plus, Trash2, X } from 'lucide-react'
 import { STATUS, STATUS_LABEL, emptyProject, newProjectId } from '../model.js'
 import { VoiceButton } from './VoiceButton.jsx'
+import { IcsExportButton } from './IcsExportButton.jsx'
 
 const STATUS_CYCLE_CLASS = {
   [STATUS.NOT_STARTED]: 'bg-gray-100 text-gray-700 border-gray-300',
@@ -158,6 +159,7 @@ export function TaskModal({ task, projects, onClose, onSave, onDelete, dispatch 
                 onChange={(e) => patch({ deadline: e.target.value || null })}
                 className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
               />
+              <IcsExportButton entity={draft} className="mt-1.5" />
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600">Responsable</label>
