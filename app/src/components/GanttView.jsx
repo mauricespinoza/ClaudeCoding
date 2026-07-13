@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import groupBy from 'lodash/groupBy.js'
 import { scaleTime, timeMonth, timeWeek } from 'd3'
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Plus } from 'lucide-react'
 import { STATUS, formatDateOnly, projectColor } from '../model.js'
 import { chipStyle } from '../color.js'
 import { fromDateOnly, toDateOnly } from '../calendarDates.js'
@@ -55,6 +55,9 @@ function navigate(zoom, cursor, dir) {
   return cursor
 }
 
+// Actividades vacías (definidas pero sin tareas todavía) se conservan: el
+// Gantt es ahora un lugar válido para armar la estructura del proyecto, no
+// solo para visualizar tareas ya creadas.
 function buildActivityGroups(projectTasks, activityOrder) {
   const byActivity = groupBy(projectTasks, (t) => t.activity ?? '')
   const names = [...(activityOrder ?? [])]
@@ -63,16 +66,18 @@ function buildActivityGroups(projectTasks, activityOrder) {
   }
   const groups = names.map((name) => ({ name, tasks: byActivity[name] ?? [] }))
   if (byActivity['']?.length) groups.push({ name: null, tasks: byActivity[''] })
-  return groups.filter((g) => g.tasks.length > 0)
+  return groups
 }
 
-export function GanttView({ projects, tasks, tagColors, dispatch, onOpenTask }) {
+export function GanttView({ projects, tasks, tagColors, dispatchAndPersist, onOpenTask, onCreateTask }) {
   const projectsWithTasks = useMemo(() => projects.filter((p) => !p.archived), [projects])
   const [selectedProjectId, setSelectedProjectId] = useState(ALL_PROJECTS)
   const [zoom, setZoom] = useState(ZOOM_LEVELS.PROJECT)
   const [cursor, setCursor] = useState(new Date())
   const [expanded, setExpanded] = useState(() => new Set())
   const [drag, setDrag] = useState(null) // { taskId, edge: 'start'|'end', previewDateOnly }
+  const [addingActivityForProjectId, setAddingActivityForProjectId] = useState(null)
+  const [activityDraftName, setActivityDraftName] = useState('')
   const svgRef = useRef(null)
 
   const isAllProjects = selectedProjectId === ALL_PROJECTS
@@ -98,19 +103,20 @@ export function GanttView({ projects, tasks, tagColors, dispatch, onOpenTask }) 
       return next
     })
 
-  // Lista plana de filas: [encabezado de proyecto opcional] -> encabezado de
-  // actividad -> tareas, cada una recortada a la ventana visible.
+  // Lista plana de filas: encabezado de proyecto -> encabezado de actividad
+  // -> tareas, cada una recortada a la ventana visible. El encabezado de
+  // proyecto y de actividad siempre se muestran (incluso sin tareas) para
+  // poder construir la estructura del proyecto desde el propio Gantt.
   const rows = useMemo(() => {
     if (!window_) return []
     const flat = []
     for (const project of relevantProjects) {
       const projectTasks = relevantTasks.filter((t) => t.projectId === project.id)
       const groups = buildActivityGroups(projectTasks, project.activityOrder)
-      if (groups.length === 0) continue
 
-      if (isAllProjects) flat.push({ type: 'project', project })
+      flat.push({ type: 'project', project })
       for (const group of groups) {
-        flat.push({ type: 'group', label: group.name ?? 'Sin actividad' })
+        flat.push({ type: 'group', label: group.name ?? 'Sin actividad', project, activityName: group.name })
         for (const task of group.tasks) {
           let range = taskBarRange(task)
           if (drag && drag.taskId === task.id && drag.previewDateOnly) {
@@ -129,7 +135,19 @@ export function GanttView({ projects, tasks, tagColors, dispatch, onOpenTask }) 
       }
     }
     return flat
-  }, [relevantProjects, relevantTasks, isAllProjects, window_, drag, expanded])
+  }, [relevantProjects, relevantTasks, window_, drag, expanded])
+
+  const startAddActivity = (projectId) => {
+    setAddingActivityForProjectId(projectId)
+    setActivityDraftName('')
+  }
+
+  const commitAddActivity = (projectId) => {
+    const name = activityDraftName.trim()
+    setAddingActivityForProjectId(null)
+    setActivityDraftName('')
+    if (name) dispatchAndPersist({ type: 'ADD_ACTIVITY', payload: { projectId, name } }, ['projects'])
+  }
 
   const rowHeight = (row) => {
     if (row.type === 'project') return PROJECT_ROW_HEIGHT
@@ -172,7 +190,7 @@ export function GanttView({ projects, tasks, tagColors, dispatch, onOpenTask }) 
       if (drag.edge === 'start' && task.deadline && value > task.deadline) value = task.deadline
       if (drag.edge === 'end' && value < fallbackStart) value = fallbackStart
       const field = drag.edge === 'start' ? 'startDate' : 'deadline'
-      dispatch({ type: 'UPDATE_TASK', payload: { id: task.id, patch: { [field]: value } } })
+      dispatchAndPersist({ type: 'UPDATE_TASK', payload: { id: task.id, patch: { [field]: value } } }, ['tasks'])
     }
     setDrag(null)
   }
@@ -239,7 +257,7 @@ export function GanttView({ projects, tasks, tagColors, dispatch, onOpenTask }) 
 
       {rows.length === 0 ? (
         <div className="flex h-32 items-center justify-center rounded-xl border border-dashed border-gray-300 text-sm text-gray-400">
-          {isAllProjects ? 'Ningún proyecto tiene tareas todavía.' : 'Este proyecto no tiene tareas todavía.'}
+          Selecciona un proyecto.
         </div>
       ) : (
         <div className="flex overflow-hidden rounded-lg border border-gray-200">
@@ -257,16 +275,52 @@ export function GanttView({ projects, tasks, tagColors, dispatch, onOpenTask }) 
                       : 'text-gray-700'
                 }`}
               >
-                {row.type === 'project' && (
-                  <span className="flex items-center gap-1.5 truncate">
-                    <span
-                      className="h-2 w-2 shrink-0 rounded-full"
-                      style={{ backgroundColor: projectColor(row.project, tagColors) }}
+                {row.type === 'project' &&
+                  (addingActivityForProjectId === row.project.id ? (
+                    <input
+                      autoFocus
+                      value={activityDraftName}
+                      onChange={(e) => setActivityDraftName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') commitAddActivity(row.project.id)
+                        if (e.key === 'Escape') setAddingActivityForProjectId(null)
+                      }}
+                      onBlur={() => commitAddActivity(row.project.id)}
+                      placeholder="Nombre de actividad…"
+                      className="w-full rounded border border-blue-300 px-1 py-0.5 text-xs focus:outline-none"
                     />
-                    <span className="truncate">{row.project.name}</span>
-                  </span>
+                  ) : (
+                    <div className="flex min-w-0 flex-1 items-center justify-between gap-1">
+                      <span className="flex min-w-0 items-center gap-1.5 truncate">
+                        <span
+                          className="h-2 w-2 shrink-0 rounded-full"
+                          style={{ backgroundColor: projectColor(row.project, tagColors) }}
+                        />
+                        <span className="truncate">{row.project.name}</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => startAddActivity(row.project.id)}
+                        title="Nueva actividad"
+                        className="shrink-0 rounded p-0.5 text-gray-400 hover:bg-gray-200 hover:text-gray-700"
+                      >
+                        <Plus size={12} />
+                      </button>
+                    </div>
+                  ))}
+                {row.type === 'group' && (
+                  <div className="flex min-w-0 flex-1 items-center justify-between gap-1">
+                    <span className="truncate">{row.label}</span>
+                    <button
+                      type="button"
+                      onClick={() => onCreateTask(row.project, row.activityName)}
+                      title="Nueva tarea"
+                      className="shrink-0 rounded p-0.5 normal-case text-gray-400 hover:bg-gray-200 hover:text-gray-700"
+                    >
+                      <Plus size={12} />
+                    </button>
+                  </div>
                 )}
-                {row.type === 'group' && row.label}
                 {row.type === 'task' && (
                   <div className="flex min-w-0 flex-1 items-start gap-1">
                     <button
@@ -336,8 +390,15 @@ export function GanttView({ projects, tasks, tagColors, dispatch, onOpenTask }) 
                 const color = STATUS_COLOR[row.task.status]
                 const isDraggingThis = drag && drag.taskId === row.task.id
 
+                const clipId = `bar-clip-${i}`
+
                 return (
                   <g key={i}>
+                    {row.task.assignee && width > 28 && (
+                      <clipPath id={clipId}>
+                        <rect x={x} y={barY} width={width} height={barHeight} rx={4} />
+                      </clipPath>
+                    )}
                     <rect
                       x={x}
                       y={barY}
@@ -357,6 +418,18 @@ export function GanttView({ projects, tasks, tagColors, dispatch, onOpenTask }) 
                         {row.task.deadline ? ` · deadline ${row.task.deadline}` : ''}
                       </title>
                     </rect>
+                    {row.task.assignee && width > 28 && (
+                      <text
+                        x={x + 5}
+                        y={barY + barHeight / 2 + 3}
+                        fontSize={9}
+                        fill="white"
+                        clipPath={`url(#${clipId})`}
+                        pointerEvents="none"
+                      >
+                        {row.task.assignee}
+                      </text>
+                    )}
                     {overflowsLeft && (
                       <text x={x + 2} y={barY + barHeight / 2 + 3} fontSize={9} fill="white" pointerEvents="none">
                         ◄

@@ -3,13 +3,13 @@
 // (window.storage por defecto ya es personal en este entorno; se documenta
 // explícitamente para claridad de intención).
 
+import { defaultMeta } from './model.js'
+
 export const KEYS = {
   META: 'app:meta',
   PROJECTS: 'app:projects',
   TASKS: 'app:tasks',
 }
-
-const SCHEMA_VERSION = 1
 
 export async function loadAll() {
   const [meta, projects, tasks] = await Promise.all([
@@ -19,7 +19,9 @@ export async function loadAll() {
   ])
 
   return {
-    meta: meta ?? { schemaVersion: SCHEMA_VERSION, lastTab: 'tasks' },
+    // Merge sobre los defaults, no reemplazo: un meta guardado antes de
+    // agregar un campo nuevo (subtitle, tagColors, ...) no debe perderlo.
+    meta: { ...defaultMeta(), ...meta },
     projects: projects ?? [],
     tasks: tasks ?? [],
   }
@@ -38,36 +40,20 @@ export async function saveMeta(meta) {
 }
 
 // Escritura debounced: evita una llamada a storage por cada tecla al editar
-// (ej. checklist). Un flush() inmediato se usa al confirmar un modal.
+// (ej. checklist). Solo para mutaciones "casuales" sin botón de guardar
+// explícito; las acciones explícitas (guardar/borrar/confirmar) persisten
+// de inmediato con saveTasks/saveProjects/saveMeta directamente (ver
+// App.jsx dispatchAndPersist) en vez de depender de este debounce.
 export function createDebouncedWriter(writeFn, delayMs = 500) {
   let timeoutId = null
-  let pendingValue = null
-  let hasPending = false
-
-  const flushNow = () => {
-    if (!hasPending) return Promise.resolve()
-    const value = pendingValue
-    hasPending = false
-    pendingValue = null
-    return writeFn(value)
-  }
 
   return {
     schedule(value) {
-      pendingValue = value
-      hasPending = true
       if (timeoutId) clearTimeout(timeoutId)
       timeoutId = setTimeout(() => {
         timeoutId = null
-        flushNow()
+        writeFn(value)
       }, delayMs)
-    },
-    async flush() {
-      if (timeoutId) {
-        clearTimeout(timeoutId)
-        timeoutId = null
-      }
-      await flushNow()
     },
   }
 }

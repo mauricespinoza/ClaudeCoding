@@ -10,13 +10,14 @@ import {
   emptyProject,
   emptyChecklistItem,
   newAttachmentId,
+  defaultMeta,
 } from './model.js'
 
 export const initialState = {
   hydrated: false,
   projects: [],
   tasks: [],
-  meta: { schemaVersion: 1, lastTab: 'tasks', tagColors: {} },
+  meta: defaultMeta(),
 }
 
 function touch(entity) {
@@ -53,6 +54,12 @@ export function appReducer(state, action) {
 
     case 'SET_LAST_TAB':
       return { ...state, meta: { ...state.meta, lastTab: action.payload } }
+
+    case 'SET_SUBTITLE':
+      return { ...state, meta: { ...state.meta, subtitle: action.payload } }
+
+    case 'SET_NOTIFICATIONS_ENABLED':
+      return { ...state, meta: { ...state.meta, notificationsEnabled: action.payload } }
 
     // Colores de tag personalizados por el usuario (ARQUITECTURA.md — ver
     // model.js tagColor()/defaultTagColors()). Merge parcial: solo se
@@ -184,6 +191,22 @@ export function appReducer(state, action) {
           ...action.payload.patch,
         })),
       }
+
+    // Agregar una actividad desde fuera del formulario de proyecto (ej. el
+    // botón "+ Nueva actividad" del Gantt): el reducer lee el activityOrder
+    // actual, evitando que el componente que dispara la acción tenga que
+    // arrastrar una copia potencialmente desactualizada.
+    case 'ADD_ACTIVITY': {
+      const { projectId, name } = action.payload
+      const trimmed = name.trim()
+      if (!trimmed) return state
+      return {
+        ...state,
+        projects: updateProjectById(state.projects, projectId, (p) =>
+          p.activityOrder.includes(trimmed) ? p : { ...p, activityOrder: [...p.activityOrder, trimmed] },
+        ),
+      }
+    }
 
     case 'DELETE_PROJECT':
       return {

@@ -1,19 +1,23 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
-import { CalendarDays, ClipboardList, FolderKanban } from 'lucide-react'
+import { CalendarDays, ClipboardList, FolderKanban, GanttChart, Pencil } from 'lucide-react'
 import { appReducer, initialState } from './reducer.js'
 import { loadAll, saveProjects, saveTasks, saveMeta, createDebouncedWriter } from './storage.js'
-import { emptyTask, emptyProject } from './model.js'
+import { emptyTask, emptyProject, DEFAULT_SUBTITLE } from './model.js'
+import { notifyDueTasks } from './notifications.js'
 import { EisenhowerMatrix } from './components/EisenhowerMatrix.jsx'
 import { TaskModal } from './components/TaskModal.jsx'
 import { ProjectsTab } from './components/ProjectsTab.jsx'
 import { ProjectDetailPanel } from './components/ProjectDetailPanel.jsx'
-import { CalendarGanttTab } from './components/CalendarGanttTab.jsx'
+import { CalendarView } from './components/CalendarView.jsx'
+import { GanttView } from './components/GanttView.jsx'
 import { BackupControls } from './components/BackupControls.jsx'
+import { NotificationsControl } from './components/NotificationsControl.jsx'
 
 const TABS = [
   { key: 'tasks', label: 'Tareas', icon: ClipboardList },
   { key: 'projects', label: 'Proyectos', icon: FolderKanban },
-  { key: 'calendar', label: 'Calendario / Gantt', icon: CalendarDays },
+  { key: 'calendar', label: 'Calendario', icon: CalendarDays },
+  { key: 'gantt', label: 'Gantt', icon: GanttChart },
 ]
 
 export default function App() {
@@ -21,6 +25,9 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('tasks')
   const [openTask, setOpenTask] = useState(null) // { task, isNew }
   const [openProject, setOpenProject] = useState(null) // { project, isNew }
+  const [editingSubtitle, setEditingSubtitle] = useState(false)
+  const [subtitleDraft, setSubtitleDraft] = useState('')
+  const notifiedRef = useRef(false)
 
   const projectsWriter = useRef(createDebouncedWriter(saveProjects))
   const tasksWriter = useRef(createDebouncedWriter(saveTasks))
@@ -53,9 +60,37 @@ export default function App() {
     metaWriter.current.schedule(state.meta)
   }, [state.hydrated, state.meta])
 
+  // Aviso de tareas vencidas/con deadline hoy al abrir la app (una vez por
+  // sesión), solo si el usuario activó notificaciones en una sesión previa
+  // y el permiso del navegador sigue concedido.
+  useEffect(() => {
+    if (!state.hydrated || notifiedRef.current || !state.meta.notificationsEnabled) return
+    notifiedRef.current = true
+    notifyDueTasks(state.tasks)
+  }, [state.hydrated, state.meta.notificationsEnabled, state.tasks])
+
   const changeTab = (tab) => {
     setActiveTab(tab)
     dispatch({ type: 'SET_LAST_TAB', payload: tab })
+  }
+
+  // Persistencia inmediata para acciones explícitas del usuario (guardar,
+  // borrar, confirmar). `flush()` del escritor debounced NO sirve aquí:
+  // se ejecuta antes de que el useEffect que agenda la escritura llegue a
+  // correr con el nuevo estado (dispatch no re-renderiza sincrónicamente),
+  // así que terminaría persistiendo el valor anterior. En su lugar se
+  // recalcula el próximo estado con el mismo reducer puro y se escribe
+  // directamente esa parte, sin depender del ciclo de efectos de React.
+  const dispatchAndPersist = async (action, parts) => {
+    const nextState = appReducer(state, action)
+    dispatch(action)
+    await Promise.all(
+      parts.map((part) => {
+        if (part === 'tasks') return saveTasks(nextState.tasks)
+        if (part === 'projects') return saveProjects(nextState.projects)
+        return saveMeta(nextState.meta)
+      }),
+    )
   }
 
   const handleCreateTask = (quadrant) => {
@@ -73,21 +108,18 @@ export default function App() {
   }
 
   const handleSaveTask = async (draft) => {
-    if (openTask?.isNew) {
-      dispatch({ type: 'ADD_TASK', payload: { seed: {}, overrides: draft } })
-    } else {
-      dispatch({ type: 'UPDATE_TASK', payload: { id: draft.id, patch: draft } })
-    }
+    const action = openTask?.isNew
+      ? { type: 'ADD_TASK', payload: { seed: {}, overrides: draft } }
+      : { type: 'UPDATE_TASK', payload: { id: draft.id, patch: draft } }
     setOpenTask(null)
-    // Flush inmediato: guardar desde el modal es una acción explícita del usuario.
-    await tasksWriter.current.flush()
-    await projectsWriter.current.flush()
+    // 'projects' también se persiste: cubre el caso de haber creado un
+    // proyecto nuevo inline desde el propio modal justo antes de guardar.
+    await dispatchAndPersist(action, ['tasks', 'projects'])
   }
 
   const handleDeleteTask = async (id) => {
-    dispatch({ type: 'DELETE_TASK', payload: { id } })
     setOpenTask(null)
-    await tasksWriter.current.flush()
+    await dispatchAndPersist({ type: 'DELETE_TASK', payload: { id } }, ['tasks'])
   }
 
   const handleOpenProject = (project) => setOpenProject({ project, isNew: false })
@@ -95,18 +127,39 @@ export default function App() {
   const handleCreateProject = () => setOpenProject({ project: emptyProject(), isNew: true })
 
   const handleDeleteProject = async (id) => {
-    dispatch({ type: 'DELETE_PROJECT', payload: { id } })
     setOpenProject(null)
-    await Promise.all([projectsWriter.current.flush(), tasksWriter.current.flush()])
+    await dispatchAndPersist({ type: 'DELETE_PROJECT', payload: { id } }, ['projects', 'tasks'])
   }
 
-  // Nueva tarea disparada desde dentro del detalle de un proyecto: queda
-  // preasignada a ese proyecto y a la actividad sobre la que se hizo click.
+  // Nueva tarea disparada desde dentro del detalle de un proyecto o del
+  // Gantt: queda preasignada a ese proyecto y a la actividad sobre la que
+  // se hizo click.
   const handleCreateTaskInProject = (project, activityName) => {
     setOpenTask({
       task: emptyTask({ projectId: project.id, activity: activityName }),
       isNew: true,
     })
+  }
+
+  // Creación rápida desde el detalle de un día del calendario: solo nombre
+  // y deadline, sin abrir el modal completo. Persiste de inmediato por ser
+  // una acción explícita del usuario.
+  const handleQuickCreateTaskOnDate = async (dateOnly, name) => {
+    await dispatchAndPersist(
+      { type: 'ADD_TASK', payload: { seed: {}, overrides: { name, deadline: dateOnly } } },
+      ['tasks'],
+    )
+  }
+
+  const handleStartEditSubtitle = () => {
+    setSubtitleDraft(state.meta.subtitle)
+    setEditingSubtitle(true)
+  }
+
+  const commitSubtitle = async () => {
+    const trimmed = subtitleDraft.trim()
+    setEditingSubtitle(false)
+    await dispatchAndPersist({ type: 'SET_SUBTITLE', payload: trimmed || DEFAULT_SUBTITLE }, ['meta'])
   }
 
   const projectOptions = useMemo(
@@ -125,11 +178,42 @@ export default function App() {
     <div className="min-h-screen bg-gray-50">
       <header className="border-b border-gray-200 bg-white">
         <div className="mx-auto flex max-w-5xl flex-wrap items-start justify-between gap-2 px-4 py-3">
-          <div>
+          <div className="min-w-0">
             <h1 className="text-lg font-semibold text-gray-900">Gestor Académico</h1>
-            <p className="text-xs text-gray-500">Tareas y proyectos — geología estructural</p>
+            {editingSubtitle ? (
+              <input
+                autoFocus
+                value={subtitleDraft}
+                onChange={(e) => setSubtitleDraft(e.target.value)}
+                onBlur={commitSubtitle}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitSubtitle()
+                  if (e.key === 'Escape') setEditingSubtitle(false)
+                }}
+                className="mt-0.5 rounded border border-blue-300 px-1.5 py-0.5 text-xs focus:outline-none"
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={handleStartEditSubtitle}
+                title="Editar subtítulo"
+                className="group mt-0.5 flex items-center gap-1 text-left"
+              >
+                <p className="text-xs text-gray-500">{state.meta.subtitle}</p>
+                <Pencil size={11} className="text-gray-300 opacity-0 group-hover:opacity-100" />
+              </button>
+            )}
           </div>
-          {state.hydrated && <BackupControls state={state} dispatch={dispatch} onImported={handleBackupImported} />}
+          {state.hydrated && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <NotificationsControl
+                enabled={state.meta.notificationsEnabled}
+                tasks={state.tasks}
+                dispatch={dispatch}
+              />
+              <BackupControls state={state} dispatch={dispatch} onImported={handleBackupImported} />
+            </div>
+          )}
         </div>
         <nav className="mx-auto flex max-w-5xl gap-1 overflow-x-auto px-4">
           {TABS.map(({ key, label, icon: Icon }) => (
@@ -175,13 +259,23 @@ export default function App() {
               />
             )}
             {activeTab === 'calendar' && (
-              <CalendarGanttTab
+              <CalendarView
                 tasks={state.tasks}
                 projects={state.projects}
                 tagColors={state.meta.tagColors}
-                dispatch={dispatch}
                 onOpenTask={handleOpenTask}
                 onOpenProject={handleOpenProject}
+                onQuickCreateTask={handleQuickCreateTaskOnDate}
+              />
+            )}
+            {activeTab === 'gantt' && (
+              <GanttView
+                tasks={state.tasks}
+                projects={state.projects}
+                tagColors={state.meta.tagColors}
+                dispatchAndPersist={dispatchAndPersist}
+                onOpenTask={handleOpenTask}
+                onCreateTask={handleCreateTaskInProject}
               />
             )}
           </>

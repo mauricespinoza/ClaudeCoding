@@ -117,6 +117,12 @@ export const newProjectId = () => makeId('p')
 export const newChecklistItemId = () => makeId('c')
 export const newAttachmentId = () => makeId('a')
 
+export const DEFAULT_SUBTITLE = 'Tareas y proyectos — geología estructural'
+
+export function defaultMeta() {
+  return { schemaVersion: 1, lastTab: 'tasks', tagColors: {}, subtitle: DEFAULT_SUBTITLE, notificationsEnabled: false }
+}
+
 export function nowIso() {
   return new Date().toISOString()
 }

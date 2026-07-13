@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, X } from 'lucide-react'
 import { projectColor, todayDateOnly } from '../model.js'
 import { chipStyle } from '../color.js'
 import {
@@ -50,7 +50,16 @@ function ItemChip({ item, tagColors }) {
   )
 }
 
-function DayDetailModal({ date, items, onClose, onOpenTask, onOpenProject }) {
+function DayDetailModal({ date, items, onClose, onOpenTask, onOpenProject, onQuickCreateTask }) {
+  const [newTaskName, setNewTaskName] = useState('')
+
+  const submitQuickCreate = () => {
+    const name = newTaskName.trim()
+    if (!name) return
+    onQuickCreateTask(date, name)
+    setNewTaskName('')
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4">
       <div className="mt-16 w-full max-w-md rounded-xl bg-white shadow-xl">
@@ -82,12 +91,29 @@ function DayDetailModal({ date, items, onClose, onOpenTask, onOpenProject }) {
             </div>
           ))}
         </div>
+        <div className="flex gap-2 border-t border-gray-200 px-5 py-3">
+          <input
+            value={newTaskName}
+            onChange={(e) => setNewTaskName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), submitQuickCreate())}
+            placeholder="Nueva tarea con deadline este día…"
+            className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
+          />
+          <button
+            type="button"
+            onClick={submitQuickCreate}
+            disabled={!newTaskName.trim()}
+            className="shrink-0 rounded-md border border-gray-300 px-2 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Plus size={16} />
+          </button>
+        </div>
       </div>
     </div>
   )
 }
 
-export function CalendarView({ tasks, projects, tagColors, onOpenTask, onOpenProject }) {
+export function CalendarView({ tasks, projects, tagColors, onOpenTask, onOpenProject, onQuickCreateTask }) {
   const [mode, setMode] = useState('month')
   const [cursor, setCursor] = useState(todayDateOnly())
   const [selectedDate, setSelectedDate] = useState(null)
@@ -190,6 +216,7 @@ export function CalendarView({ tasks, projects, tagColors, onOpenTask, onOpenPro
             setSelectedDate(null)
             onOpenProject(project)
           }}
+          onQuickCreateTask={onQuickCreateTask}
         />
       )}
     </div>
