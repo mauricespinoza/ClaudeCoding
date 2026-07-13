@@ -61,6 +61,9 @@ export function appReducer(state, action) {
     case 'SET_NOTIFICATIONS_ENABLED':
       return { ...state, meta: { ...state.meta, notificationsEnabled: action.payload } }
 
+    case 'SET_AI_CONFIG':
+      return { ...state, meta: { ...state.meta, ai: { ...state.meta.ai, ...action.payload } } }
+
     // Colores de tag personalizados por el usuario (ARQUITECTURA.md — ver
     // model.js tagColor()/defaultTagColors()). Merge parcial: solo se
     // sobrescriben los tags que el usuario efectivamente cambió.
@@ -87,6 +90,21 @@ export function appReducer(state, action) {
 
     case 'DELETE_TASK':
       return { ...state, tasks: state.tasks.filter((t) => t.id !== action.payload.id) }
+
+    // Reordenar filas de tarea dentro de una misma actividad (drag & drop en
+    // el Gantt): reasigna `order` en secuencia para exactamente esos ids,
+    // generando timestamps consecutivos para no chocar con valores de otras
+    // tareas ni depender de mezclar tipos en el campo (sigue siendo string
+    // ISO, igual que el resto de la app).
+    case 'REORDER_TASKS': {
+      const { taskIds } = action.payload
+      const base = Date.now()
+      const orderMap = new Map(taskIds.map((id, i) => [id, new Date(base + i).toISOString()]))
+      return {
+        ...state,
+        tasks: state.tasks.map((t) => (orderMap.has(t.id) ? touch({ ...t, order: orderMap.get(t.id) }) : t)),
+      }
+    }
 
     case 'SET_TASK_QUADRANT': {
       const { id, important, urgent } = action.payload

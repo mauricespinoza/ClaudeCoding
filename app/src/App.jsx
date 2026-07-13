@@ -288,7 +288,8 @@ export default function App() {
           isNew={openProject.isNew}
           tasks={state.tasks}
           tagColors={state.meta.tagColors}
-          dispatch={dispatch}
+          aiConfig={state.meta.ai}
+          dispatchAndPersist={dispatchAndPersist}
           onClose={() => setOpenProject(null)}
           onDelete={handleDeleteProject}
           onOpenTask={handleOpenTask}

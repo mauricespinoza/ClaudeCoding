@@ -1,15 +1,15 @@
 import { useMemo, useRef, useState } from 'react'
 import groupBy from 'lodash/groupBy.js'
 import { scaleTime, timeMonth, timeWeek } from 'd3'
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Plus } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, GripVertical, Plus } from 'lucide-react'
 import { STATUS, formatDateOnly, projectColor } from '../model.js'
-import { chipStyle } from '../color.js'
 import { fromDateOnly, toDateOnly } from '../calendarDates.js'
 import {
   ZOOM_LEVELS,
   clipToWindow,
   taskBarRange,
   ticksFor,
+  unionRange,
   windowFor,
 } from '../ganttLayout.js'
 
@@ -18,7 +18,9 @@ const DETAIL_HEIGHT = 32
 const HEADER_HEIGHT = 28
 const GROUP_ROW_HEIGHT = 24
 const PROJECT_ROW_HEIGHT = 26
+const SUMMARY_BAR_HEIGHT = 10
 const ALL_PROJECTS = '__all__'
+const NO_ACTIVITY_KEY = '__none__'
 
 const STATUS_COLOR = {
   [STATUS.NOT_STARTED]: '#9ca3af',
@@ -55,17 +57,23 @@ function navigate(zoom, cursor, dir) {
   return cursor
 }
 
+function sortByOrder(list) {
+  return [...list].sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0))
+}
+
 // Actividades vacías (definidas pero sin tareas todavía) se conservan: el
 // Gantt es ahora un lugar válido para armar la estructura del proyecto, no
-// solo para visualizar tareas ya creadas.
+// solo para visualizar tareas ya creadas. Las tareas de cada actividad se
+// ordenan por `order`, el mismo campo que controla el orden en la matriz
+// Eisenhower — reordenar acá (drag & drop) reescribe ese campo.
 function buildActivityGroups(projectTasks, activityOrder) {
   const byActivity = groupBy(projectTasks, (t) => t.activity ?? '')
   const names = [...(activityOrder ?? [])]
   for (const name of Object.keys(byActivity)) {
     if (name && !names.includes(name)) names.push(name)
   }
-  const groups = names.map((name) => ({ name, tasks: byActivity[name] ?? [] }))
-  if (byActivity['']?.length) groups.push({ name: null, tasks: byActivity[''] })
+  const groups = names.map((name) => ({ name, tasks: sortByOrder(byActivity[name] ?? []) }))
+  if (byActivity['']?.length) groups.push({ name: null, tasks: sortByOrder(byActivity['']) })
   return groups
 }
 
@@ -75,7 +83,10 @@ export function GanttView({ projects, tasks, tagColors, dispatchAndPersist, onOp
   const [zoom, setZoom] = useState(ZOOM_LEVELS.PROJECT)
   const [cursor, setCursor] = useState(new Date())
   const [expanded, setExpanded] = useState(() => new Set())
+  const [collapsedProjects, setCollapsedProjects] = useState(() => new Set())
+  const [collapsedGroups, setCollapsedGroups] = useState(() => new Set())
   const [drag, setDrag] = useState(null) // { taskId, edge: 'start'|'end', previewDateOnly }
+  const [draggedRow, setDraggedRow] = useState(null) // { type: 'group'|'task', ... } — reordenar filas
   const [addingActivityForProjectId, setAddingActivityForProjectId] = useState(null)
   const [activityDraftName, setActivityDraftName] = useState('')
   const svgRef = useRef(null)
@@ -103,39 +114,81 @@ export function GanttView({ projects, tasks, tagColors, dispatchAndPersist, onOp
       return next
     })
 
+  const toggleProjectCollapsed = (projectId) =>
+    setCollapsedProjects((prev) => {
+      const next = new Set(prev)
+      next.has(projectId) ? next.delete(projectId) : next.add(projectId)
+      return next
+    })
+
+  const toggleGroupCollapsed = (groupKey) =>
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev)
+      next.has(groupKey) ? next.delete(groupKey) : next.add(groupKey)
+      return next
+    })
+
+  // Rango de una tarea, sustituyendo el extremo que se está arrastrando por
+  // la fecha de vista previa — así las barras resumen (proyecto/actividad
+  // colapsados) también se actualizan en vivo mientras se arrastra.
+  const taskRangeWithPreview = (task) => {
+    let range = taskBarRange(task)
+    if (drag && drag.taskId === task.id && drag.previewDateOnly) {
+      range =
+        drag.edge === 'start'
+          ? [fromDateOnly(drag.previewDateOnly), range[1]]
+          : [range[0], fromDateOnly(drag.previewDateOnly)]
+    }
+    return range
+  }
+
   // Lista plana de filas: encabezado de proyecto -> encabezado de actividad
-  // -> tareas, cada una recortada a la ventana visible. El encabezado de
-  // proyecto y de actividad siempre se muestran (incluso sin tareas) para
-  // poder construir la estructura del proyecto desde el propio Gantt.
+  // -> tareas. Proyecto/actividad siempre se muestran (incluso sin tareas)
+  // para poder construir la estructura desde el propio Gantt; al colapsar
+  // uno, sus filas hijas se ocultan y se dibuja una barra resumen con el
+  // rango [inicio más antiguo, deadline más posterior] de sus tareas.
   const rows = useMemo(() => {
     if (!window_) return []
     const flat = []
     for (const project of relevantProjects) {
       const projectTasks = relevantTasks.filter((t) => t.projectId === project.id)
       const groups = buildActivityGroups(projectTasks, project.activityOrder)
+      const projectCollapsed = collapsedProjects.has(project.id)
 
-      flat.push({ type: 'project', project })
+      flat.push({
+        type: 'project',
+        project,
+        collapsed: projectCollapsed,
+        summaryRange: projectCollapsed ? unionRange(projectTasks.map(taskRangeWithPreview)) : null,
+      })
+      if (projectCollapsed) continue
+
       for (const group of groups) {
-        flat.push({ type: 'group', label: group.name ?? 'Sin actividad', project, activityName: group.name })
+        const groupKey = `${project.id}::${group.name ?? NO_ACTIVITY_KEY}`
+        const groupCollapsed = collapsedGroups.has(groupKey)
+        flat.push({
+          type: 'group',
+          label: group.name ?? 'Sin actividad',
+          project,
+          activityName: group.name,
+          collapsed: groupCollapsed,
+          summaryRange: groupCollapsed ? unionRange(group.tasks.map(taskRangeWithPreview)) : null,
+        })
+        if (groupCollapsed) continue
+
         for (const task of group.tasks) {
-          let range = taskBarRange(task)
-          if (drag && drag.taskId === task.id && drag.previewDateOnly) {
-            range =
-              drag.edge === 'start'
-                ? [fromDateOnly(drag.previewDateOnly), range[1]]
-                : [range[0], fromDateOnly(drag.previewDateOnly)]
-          }
           flat.push({
             type: 'task',
             task,
-            clip: clipToWindow(range, window_),
+            clip: clipToWindow(taskRangeWithPreview(task), window_),
             expanded: expanded.has(task.id),
           })
         }
       }
     }
     return flat
-  }, [relevantProjects, relevantTasks, window_, drag, expanded])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [relevantProjects, relevantTasks, window_, drag, expanded, collapsedProjects, collapsedGroups])
 
   const startAddActivity = (projectId) => {
     setAddingActivityForProjectId(projectId)
@@ -147,6 +200,59 @@ export function GanttView({ projects, tasks, tagColors, dispatchAndPersist, onOp
     setAddingActivityForProjectId(null)
     setActivityDraftName('')
     if (name) dispatchAndPersist({ type: 'ADD_ACTIVITY', payload: { projectId, name } }, ['projects'])
+  }
+
+  // Reordenar actividades (arrastrar un encabezado de actividad sobre otro
+  // del mismo proyecto) reescribe project.activityOrder.
+  const handleGroupDrop = (targetRow) => {
+    if (!draggedRow || draggedRow.type !== 'group') return setDraggedRow(null)
+    const { projectId, name } = draggedRow
+    if (
+      projectId !== targetRow.project.id ||
+      targetRow.activityName == null ||
+      name === targetRow.activityName
+    ) {
+      return setDraggedRow(null)
+    }
+    const order = [...targetRow.project.activityOrder]
+    const fromIdx = order.indexOf(name)
+    const toIdx = order.indexOf(targetRow.activityName)
+    setDraggedRow(null)
+    if (fromIdx === -1 || toIdx === -1) return
+    order.splice(fromIdx, 1)
+    order.splice(toIdx, 0, name)
+    dispatchAndPersist({ type: 'UPDATE_PROJECT', payload: { id: projectId, patch: { activityOrder: order } } }, [
+      'projects',
+    ])
+  }
+
+  // Reordenar tareas (arrastrar una tarea sobre otra de la misma actividad)
+  // reasigna `order` según la posición visual resultante.
+  const handleTaskDrop = (targetRow) => {
+    if (!draggedRow || draggedRow.type !== 'task') return setDraggedRow(null)
+    const targetActivityKey = targetRow.task.activity ?? null
+    if (
+      draggedRow.projectId !== targetRow.task.projectId ||
+      draggedRow.activityKey !== targetActivityKey ||
+      draggedRow.id === targetRow.task.id
+    ) {
+      return setDraggedRow(null)
+    }
+    const groupTaskIds = rows
+      .filter(
+        (r) =>
+          r.type === 'task' &&
+          r.task.projectId === targetRow.task.projectId &&
+          (r.task.activity ?? null) === targetActivityKey,
+      )
+      .map((r) => r.task.id)
+    const fromIdx = groupTaskIds.indexOf(draggedRow.id)
+    const toIdx = groupTaskIds.indexOf(targetRow.task.id)
+    setDraggedRow(null)
+    if (fromIdx === -1 || toIdx === -1) return
+    groupTaskIds.splice(fromIdx, 1)
+    groupTaskIds.splice(toIdx, 0, draggedRow.id)
+    dispatchAndPersist({ type: 'REORDER_TASKS', payload: { taskIds: groupTaskIds } }, ['tasks'])
   }
 
   const rowHeight = (row) => {
@@ -261,13 +367,35 @@ export function GanttView({ projects, tasks, tagColors, dispatchAndPersist, onOp
         </div>
       ) : (
         <div className="flex overflow-hidden rounded-lg border border-gray-200">
-          <div className="w-36 shrink-0 border-r border-gray-200 bg-gray-50 sm:w-48">
+          <div className="w-40 shrink-0 border-r border-gray-200 bg-gray-50 sm:w-52">
             <div style={{ height: HEADER_HEIGHT }} className="border-b border-gray-200" />
             {rows.map((row, i) => (
               <div
                 key={i}
                 style={{ height: rowHeight(row) }}
-                className={`flex items-start px-2 py-1 text-xs ${
+                draggable={row.type === 'group' ? row.activityName != null : row.type === 'task'}
+                onDragStart={
+                  row.type === 'group'
+                    ? () => setDraggedRow({ type: 'group', projectId: row.project.id, name: row.activityName })
+                    : row.type === 'task'
+                      ? () =>
+                          setDraggedRow({
+                            type: 'task',
+                            id: row.task.id,
+                            projectId: row.task.projectId,
+                            activityKey: row.task.activity ?? null,
+                          })
+                      : undefined
+                }
+                onDragOver={row.type === 'group' || row.type === 'task' ? (e) => e.preventDefault() : undefined}
+                onDrop={
+                  row.type === 'group'
+                    ? () => handleGroupDrop(row)
+                    : row.type === 'task'
+                      ? () => handleTaskDrop(row)
+                      : undefined
+                }
+                className={`flex items-start px-1.5 py-1 text-xs ${
                   row.type === 'group'
                     ? 'items-center font-semibold uppercase tracking-wide text-gray-500'
                     : row.type === 'project'
@@ -290,8 +418,16 @@ export function GanttView({ projects, tasks, tagColors, dispatchAndPersist, onOp
                       className="w-full rounded border border-blue-300 px-1 py-0.5 text-xs focus:outline-none"
                     />
                   ) : (
-                    <div className="flex min-w-0 flex-1 items-center justify-between gap-1">
-                      <span className="flex min-w-0 items-center gap-1.5 truncate">
+                    <div className="flex min-w-0 flex-1 items-center justify-between gap-0.5">
+                      <button
+                        type="button"
+                        onClick={() => toggleProjectCollapsed(row.project.id)}
+                        className="shrink-0 text-gray-400 hover:text-gray-700"
+                        title={row.collapsed ? 'Mostrar actividades' : 'Ocultar actividades'}
+                      >
+                        {row.collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+                      </button>
+                      <span className="flex min-w-0 flex-1 items-center gap-1.5 truncate">
                         <span
                           className="h-2 w-2 shrink-0 rounded-full"
                           style={{ backgroundColor: projectColor(row.project, tagColors) }}
@@ -309,8 +445,17 @@ export function GanttView({ projects, tasks, tagColors, dispatchAndPersist, onOp
                     </div>
                   ))}
                 {row.type === 'group' && (
-                  <div className="flex min-w-0 flex-1 items-center justify-between gap-1">
-                    <span className="truncate">{row.label}</span>
+                  <div className="flex min-w-0 flex-1 items-center justify-between gap-0.5">
+                    <GripVertical size={11} className="shrink-0 cursor-grab text-gray-300" />
+                    <button
+                      type="button"
+                      onClick={() => toggleGroupCollapsed(`${row.project.id}::${row.activityName ?? NO_ACTIVITY_KEY}`)}
+                      className="shrink-0 text-gray-400 hover:text-gray-700"
+                      title={row.collapsed ? 'Mostrar tareas' : 'Ocultar tareas'}
+                    >
+                      {row.collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                    </button>
+                    <span className="min-w-0 flex-1 truncate normal-case">{row.label}</span>
                     <button
                       type="button"
                       onClick={() => onCreateTask(row.project, row.activityName)}
@@ -322,7 +467,8 @@ export function GanttView({ projects, tasks, tagColors, dispatchAndPersist, onOp
                   </div>
                 )}
                 {row.type === 'task' && (
-                  <div className="flex min-w-0 flex-1 items-start gap-1">
+                  <div className="flex min-w-0 flex-1 items-start gap-0.5">
+                    <GripVertical size={11} className="mt-0.5 shrink-0 cursor-grab text-gray-300" />
                     <button
                       type="button"
                       onClick={() => toggleExpand(row.task.id)}
@@ -377,7 +523,45 @@ export function GanttView({ projects, tasks, tagColors, dispatchAndPersist, onOp
                 const h = rowHeight(row)
 
                 if (row.type === 'project' || row.type === 'group') {
-                  return <line key={i} x1={0} x2={plotWidth} y1={rowY + h} y2={rowY + h} stroke="#f3f4f6" />
+                  const clip = row.summaryRange && clipToWindow(row.summaryRange, window_)
+                  if (!clip) {
+                    return <line key={i} x1={0} x2={plotWidth} y1={rowY + h} y2={rowY + h} stroke="#f3f4f6" />
+                  }
+                  const x = scale(clip.range[0])
+                  const width = Math.max(scale(clip.range[1]) - x, 5)
+                  const barY = rowY + (h - SUMMARY_BAR_HEIGHT) / 2
+                  const summaryColor = row.type === 'project' ? projectColor(row.project, tagColors) : '#6b7280'
+                  return (
+                    <g key={i}>
+                      <rect
+                        x={x}
+                        y={barY}
+                        width={width}
+                        height={SUMMARY_BAR_HEIGHT}
+                        rx={3}
+                        fill={summaryColor}
+                        opacity={0.55}
+                        pointerEvents="none"
+                      />
+                      {clip.overflowsLeft && (
+                        <text x={x + 1} y={barY + SUMMARY_BAR_HEIGHT / 2 + 3} fontSize={8} fill="white" pointerEvents="none">
+                          ◄
+                        </text>
+                      )}
+                      {clip.overflowsRight && (
+                        <text
+                          x={x + width - 7}
+                          y={barY + SUMMARY_BAR_HEIGHT / 2 + 3}
+                          fontSize={8}
+                          fill="white"
+                          pointerEvents="none"
+                        >
+                          ►
+                        </text>
+                      )}
+                      <line x1={0} x2={plotWidth} y1={rowY + h} y2={rowY + h} stroke="#f3f4f6" />
+                    </g>
+                  )
                 }
 
                 if (!row.clip) return <g key={i} />

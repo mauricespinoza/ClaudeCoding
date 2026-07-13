@@ -132,7 +132,7 @@ export function parseAISuggestions(rawText, { projectDeadline = null } = {}) {
 // hay backend propio: se usa una key de desarrollo opcional vía variable de
 // entorno, solo para probar el flujo end-to-end; nunca debe usarse así en
 // producción real.
-export async function requestAISuggestions(project) {
+async function requestFromClaude(project) {
   const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY
   if (!apiKey) {
     throw new Error(
@@ -158,11 +158,55 @@ export async function requestAISuggestions(project) {
   })
 
   if (!response.ok) {
-    throw new Error(`La API respondió con error ${response.status}.`)
+    throw new Error(`La API de Claude respondió con error ${response.status}.`)
   }
 
   const data = await response.json()
-  const rawText = data.content?.map((block) => block.text ?? '').join('') ?? ''
+  return data.content?.map((block) => block.text ?? '').join('') ?? ''
+}
+
+// Alternativa gratuita y sin registro: un modelo corriendo localmente vía
+// Ollama (https://ollama.com), gratis y privado (no sale de la máquina del
+// usuario). Requiere tener Ollama instalado, corriendo (`ollama serve`) y el
+// modelo descargado (`ollama pull llama3.1`). Por defecto Ollama solo acepta
+// peticiones desde localhost: si esta app corre en otro origen puede hacer
+// falta iniciar Ollama con `OLLAMA_ORIGINS=*` para permitir el fetch desde
+// el navegador (CORS).
+async function requestFromOllama(project, { ollamaUrl, ollamaModel }) {
+  let response
+  try {
+    response = await fetch(`${ollamaUrl.replace(/\/$/, '')}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: ollamaModel,
+        stream: false,
+        format: 'json',
+        messages: [
+          { role: 'system', content: AI_SYSTEM_PROMPT },
+          { role: 'user', content: buildUserPrompt(project) },
+        ],
+      }),
+    })
+  } catch {
+    throw new Error(
+      `No se pudo conectar a Ollama en ${ollamaUrl}. ¿Está corriendo ("ollama serve")? Si la app no está en ` +
+        'localhost, puede que necesites iniciar Ollama con OLLAMA_ORIGINS=* para permitir la conexión.',
+    )
+  }
+
+  if (!response.ok) {
+    throw new Error(`Ollama respondió con error ${response.status}. ¿Descargaste el modelo "${ollamaModel}"?`)
+  }
+
+  const data = await response.json()
+  return data.message?.content ?? ''
+}
+
+export async function requestAISuggestions(project, aiConfig) {
+  const rawText =
+    aiConfig?.provider === 'ollama' ? await requestFromOllama(project, aiConfig) : await requestFromClaude(project)
+
   const result = parseAISuggestions(rawText, { projectDeadline: project.deadline })
   if (!result.ok) throw new Error(result.error)
   return result.activities

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import groupBy from 'lodash/groupBy.js'
-import { Archive, ArchiveRestore, Loader2, Plus, Sparkles, Trash2, X } from 'lucide-react'
+import { Archive, ArchiveRestore, Loader2, Plus, Settings, Sparkles, Trash2, X } from 'lucide-react'
 import { PROJECT_COLOR_TAGS, formatDateOnly, projectColor, projectCompletion, tagColor } from '../model.js'
 import { requestAISuggestions } from '../aiSuggest.js'
 import { TaskCard } from './TaskCard.jsx'
@@ -13,14 +13,26 @@ const IMPORTANCE_OPTIONS = [
   { value: 3, label: 'Alta' },
 ]
 
-export function ProjectDetailPanel({ project, tasks, tagColors, isNew, dispatch, onClose, onDelete, onOpenTask, onCreateTask }) {
-  const [draft, setDraft] = useState(project)
+export function ProjectDetailPanel({
+  project,
+  tasks,
+  tagColors,
+  aiConfig,
+  isNew,
+  dispatchAndPersist,
+  onClose,
+  onDelete,
+  onOpenTask,
+  onCreateTask,
+}) {
+  const [draft, setDraft] = useState({ notes: '', ...project })
   const [newActivityName, setNewActivityName] = useState('')
   const [overrideEnabled, setOverrideEnabled] = useState(project.completionOverride != null)
   const [customColorEnabled, setCustomColorEnabled] = useState(project.color != null)
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState(null)
   const [aiActivities, setAiActivities] = useState(null)
+  const [showAiSettings, setShowAiSettings] = useState(false)
 
   const patch = (fields) => setDraft((d) => ({ ...d, ...fields }))
 
@@ -38,14 +50,13 @@ export function ProjectDetailPanel({ project, tasks, tagColors, isNew, dispatch,
     return groups
   }, [projectTasks, draft.activityOrder])
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!draft.name.trim()) return
-    if (isNew) {
-      dispatch({ type: 'ADD_PROJECT', payload: { seed: {}, overrides: draft } })
-    } else {
-      dispatch({ type: 'UPDATE_PROJECT', payload: { id: draft.id, patch: draft } })
-    }
+    const action = isNew
+      ? { type: 'ADD_PROJECT', payload: { seed: {}, overrides: draft } }
+      : { type: 'UPDATE_PROJECT', payload: { id: draft.id, patch: draft } }
     onClose()
+    await dispatchAndPersist(action, ['projects'])
   }
 
   const addActivity = () => {
@@ -71,7 +82,7 @@ export function ProjectDetailPanel({ project, tasks, tagColors, isNew, dispatch,
     setAiError(null)
     setAiLoading(true)
     try {
-      const activities = await requestAISuggestions(draft)
+      const activities = await requestAISuggestions(draft, aiConfig)
       setAiActivities(activities)
     } catch (err) {
       setAiError(err.message)
@@ -80,9 +91,14 @@ export function ProjectDetailPanel({ project, tasks, tagColors, isNew, dispatch,
     }
   }
 
-  const confirmAISuggestions = (activitiesToInsert) => {
-    dispatch({ type: 'INSERT_AI_SUGGESTIONS', payload: { projectId: draft.id, activities: activitiesToInsert } })
+  const setAiConfig = (patch) => dispatchAndPersist({ type: 'SET_AI_CONFIG', payload: patch }, ['meta'])
+
+  const confirmAISuggestions = async (activitiesToInsert) => {
     setAiActivities(null)
+    await dispatchAndPersist(
+      { type: 'INSERT_AI_SUGGESTIONS', payload: { projectId: draft.id, activities: activitiesToInsert } },
+      ['projects', 'tasks'],
+    )
   }
 
   return (
@@ -123,6 +139,17 @@ export function ProjectDetailPanel({ project, tasks, tagColors, isNew, dispatch,
               value={draft.description}
               onChange={(e) => patch({ description: e.target.value })}
               rows={2}
+              className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-600">Notas</label>
+            <textarea
+              value={draft.notes}
+              onChange={(e) => patch({ notes: e.target.value })}
+              rows={4}
+              placeholder="Ideas, avances, recordatorios sueltos sobre el proyecto…"
               className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
             />
           </div>
@@ -238,18 +265,75 @@ export function ProjectDetailPanel({ project, tasks, tagColors, isNew, dispatch,
 
           {!isNew && (
             <div>
-              <div className="mb-2 flex items-center justify-between">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-sm font-semibold text-gray-800">Actividades y tareas</h3>
-                <button
-                  type="button"
-                  onClick={runAISuggest}
-                  disabled={aiLoading}
-                  className="inline-flex items-center gap-1.5 rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-60"
-                >
-                  {aiLoading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                  Sugerir actividades y tareas con IA
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowAiSettings((s) => !s)}
+                    title="Proveedor de IA"
+                    className="rounded-md border border-gray-300 p-1.5 text-gray-500 hover:bg-gray-100"
+                  >
+                    <Settings size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={runAISuggest}
+                    disabled={aiLoading}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-60"
+                  >
+                    {aiLoading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                    Sugerir actividades y tareas con IA
+                  </button>
+                </div>
               </div>
+              {showAiSettings && (
+                <div className="mb-3 space-y-2 rounded-md border border-gray-200 bg-gray-50 p-3 text-xs">
+                  <div className="flex items-center gap-2">
+                    <label className="text-gray-600">Proveedor:</label>
+                    <select
+                      value={aiConfig.provider}
+                      onChange={(e) => setAiConfig({ provider: e.target.value })}
+                      className="rounded border border-gray-300 px-2 py-1"
+                    >
+                      <option value="claude">Claude (API key)</option>
+                      <option value="ollama">Ollama local (gratis)</option>
+                    </select>
+                  </div>
+                  {aiConfig.provider === 'ollama' ? (
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-0.5 block text-gray-500">URL de Ollama</label>
+                        <input
+                          value={aiConfig.ollamaUrl}
+                          onChange={(e) => setAiConfig({ ollamaUrl: e.target.value })}
+                          className="w-full rounded border border-gray-300 px-2 py-1"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-0.5 block text-gray-500">Modelo</label>
+                        <input
+                          value={aiConfig.ollamaModel}
+                          onChange={(e) => setAiConfig({ ollamaModel: e.target.value })}
+                          placeholder="ej. llama3.1, mistral"
+                          className="w-full rounded border border-gray-300 px-2 py-1"
+                        />
+                      </div>
+                      <p className="col-span-full text-[11px] text-gray-400">
+                        Gratis y privado: requiere tener{' '}
+                        <a href="https://ollama.com" target="_blank" rel="noreferrer" className="underline">
+                          Ollama
+                        </a>{' '}
+                        instalado y corriendo (`ollama serve`) con el modelo descargado (`ollama pull {aiConfig.ollamaModel || 'llama3.1'}`).
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-gray-400">
+                      Requiere una API key de Anthropic configurada en el entorno (VITE_ANTHROPIC_API_KEY).
+                    </p>
+                  )}
+                </div>
+              )}
               {aiError && (
                 <p className="mb-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{aiError}</p>
               )}

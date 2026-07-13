@@ -120,7 +120,14 @@ export const newAttachmentId = () => makeId('a')
 export const DEFAULT_SUBTITLE = 'Tareas y proyectos — geología estructural'
 
 export function defaultMeta() {
-  return { schemaVersion: 1, lastTab: 'tasks', tagColors: {}, subtitle: DEFAULT_SUBTITLE, notificationsEnabled: false }
+  return {
+    schemaVersion: 1,
+    lastTab: 'tasks',
+    tagColors: {},
+    subtitle: DEFAULT_SUBTITLE,
+    notificationsEnabled: false,
+    ai: { provider: 'claude', ollamaUrl: 'http://localhost:11434', ollamaModel: 'llama3.1' },
+  }
 }
 
 export function nowIso() {
@@ -179,6 +186,7 @@ export function emptyProject({ name = '' } = {}) {
     name,
     description: '',
     objective: '',
+    notes: '',
     collaborators: '',
     deadline: null,
     startDate: null,
