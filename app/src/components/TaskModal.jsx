@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Paperclip, Plus, Trash2, X } from 'lucide-react'
-import { STATUS, STATUS_LABEL, emptyProject, newProjectId } from '../model.js'
+import { STATUS, STATUS_LABEL, emptyProject, formatDateOnly, newProjectId } from '../model.js'
 import { VoiceButton } from './VoiceButton.jsx'
 import { IcsExportButton } from './IcsExportButton.jsx'
 
@@ -150,7 +150,21 @@ export function TaskModal({ task, projects, onClose, onSave, onDelete, dispatch 
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Fecha de inicio</label>
+              <input
+                type="date"
+                value={draft.startDate ?? ''}
+                onChange={(e) => patch({ startDate: e.target.value || null })}
+                className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
+              />
+              {!draft.startDate && (
+                <p className="mt-1 text-[11px] text-gray-400">
+                  Sin definir: se usa la fecha de creación ({formatDateOnly(draft.createdAt.slice(0, 10))}).
+                </p>
+              )}
+            </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600">Deadline</label>
               <input
@@ -161,15 +175,16 @@ export function TaskModal({ task, projects, onClose, onSave, onDelete, dispatch 
               />
               <IcsExportButton entity={draft} className="mt-1.5" />
             </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">Responsable</label>
-              <input
-                value={draft.assignee}
-                onChange={(e) => patch({ assignee: e.target.value })}
-                placeholder="Ej. yo, tesista X"
-                className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
-              />
-            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-600">Responsable</label>
+            <input
+              value={draft.assignee}
+              onChange={(e) => patch({ assignee: e.target.value })}
+              placeholder="Ej. yo, tesista X"
+              className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
+            />
           </div>
 
           <div>

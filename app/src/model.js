@@ -20,12 +20,30 @@ export function nextStatus(status) {
   return STATUS_ORDER[(i + 1) % STATUS_ORDER.length]
 }
 
+// Colores por defecto de cada tag de proyecto (hex, no clases Tailwind
+// estáticas) — el usuario puede sobrescribirlos globalmente (meta.tagColors,
+// vía TagColorSettings) o por proyecto individual (project.color).
 export const PROJECT_COLOR_TAGS = {
-  investigacion: { label: 'Investigación', className: 'bg-violet-100 text-violet-800 border-violet-300' },
-  docencia: { label: 'Docencia', className: 'bg-sky-100 text-sky-800 border-sky-300' },
-  vinculacion: { label: 'Vinculación', className: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
-  administracion: { label: 'Administración', className: 'bg-slate-200 text-slate-800 border-slate-400' },
-  varios: { label: 'Varios', className: 'bg-stone-100 text-stone-800 border-stone-300' },
+  investigacion: { label: 'Investigación', defaultColor: '#7c3aed' },
+  docencia: { label: 'Docencia', defaultColor: '#0284c7' },
+  vinculacion: { label: 'Vinculación', defaultColor: '#059669' },
+  administracion: { label: 'Administración', defaultColor: '#475569' },
+  varios: { label: 'Varios', defaultColor: '#78716c' },
+}
+
+export function defaultTagColors() {
+  return Object.fromEntries(Object.entries(PROJECT_COLOR_TAGS).map(([key, v]) => [key, v.defaultColor]))
+}
+
+// Color de un tag, respetando el override global del usuario si existe.
+export function tagColor(tagKey, tagColors) {
+  return tagColors?.[tagKey] ?? PROJECT_COLOR_TAGS[tagKey]?.defaultColor ?? '#6b7280'
+}
+
+// Color efectivo de un proyecto: su propio override si lo tiene, si no el
+// de su tag.
+export function projectColor(project, tagColors) {
+  return project.color ?? tagColor(project.colorTag, tagColors)
 }
 
 export const QUADRANTS = [
@@ -157,8 +175,9 @@ export function emptyProject({ name = '' } = {}) {
     objective: '',
     collaborators: '',
     deadline: null,
-    startDate: todayDateOnly(),
+    startDate: null,
     colorTag: 'investigacion',
+    color: null,
     importance: 2,
     completionOverride: null,
     activityOrder: [],

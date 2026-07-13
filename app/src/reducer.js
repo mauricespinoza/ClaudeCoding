@@ -16,7 +16,7 @@ export const initialState = {
   hydrated: false,
   projects: [],
   tasks: [],
-  meta: { schemaVersion: 1, lastTab: 'tasks' },
+  meta: { schemaVersion: 1, lastTab: 'tasks', tagColors: {} },
 }
 
 function touch(entity) {
@@ -53,6 +53,15 @@ export function appReducer(state, action) {
 
     case 'SET_LAST_TAB':
       return { ...state, meta: { ...state.meta, lastTab: action.payload } }
+
+    // Colores de tag personalizados por el usuario (ARQUITECTURA.md — ver
+    // model.js tagColor()/defaultTagColors()). Merge parcial: solo se
+    // sobrescriben los tags que el usuario efectivamente cambió.
+    case 'SET_TAG_COLORS':
+      return { ...state, meta: { ...state.meta, tagColors: { ...state.meta.tagColors, ...action.payload } } }
+
+    case 'RESET_TAG_COLORS':
+      return { ...state, meta: { ...state.meta, tagColors: {} } }
 
     // ---- Tareas ----
 

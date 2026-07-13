@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import groupBy from 'lodash/groupBy.js'
 import { Archive, ArchiveRestore, Loader2, Plus, Sparkles, Trash2, X } from 'lucide-react'
-import { PROJECT_COLOR_TAGS, projectCompletion } from '../model.js'
+import { PROJECT_COLOR_TAGS, formatDateOnly, projectColor, projectCompletion, tagColor } from '../model.js'
 import { requestAISuggestions } from '../aiSuggest.js'
 import { TaskCard } from './TaskCard.jsx'
 import { AISuggestionsReview } from './AISuggestionsReview.jsx'
@@ -13,10 +13,11 @@ const IMPORTANCE_OPTIONS = [
   { value: 3, label: 'Alta' },
 ]
 
-export function ProjectDetailPanel({ project, tasks, isNew, dispatch, onClose, onDelete, onOpenTask, onCreateTask }) {
+export function ProjectDetailPanel({ project, tasks, tagColors, isNew, dispatch, onClose, onDelete, onOpenTask, onCreateTask }) {
   const [draft, setDraft] = useState(project)
   const [newActivityName, setNewActivityName] = useState('')
   const [overrideEnabled, setOverrideEnabled] = useState(project.completionOverride != null)
+  const [customColorEnabled, setCustomColorEnabled] = useState(project.color != null)
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState(null)
   const [aiActivities, setAiActivities] = useState(null)
@@ -60,6 +61,11 @@ export function ProjectDetailPanel({ project, tasks, isNew, dispatch, onClose, o
   }
 
   const toggleArchived = () => patch({ archived: !draft.archived })
+
+  const toggleCustomColor = (enabled) => {
+    setCustomColorEnabled(enabled)
+    patch({ color: enabled ? projectColor(draft, tagColors) : null })
+  }
 
   const runAISuggest = async () => {
     setAiError(null)
@@ -121,14 +127,29 @@ export function ProjectDetailPanel({ project, tasks, isNew, dispatch, onClose, o
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-600">Colaboradores</label>
+            <input
+              value={draft.collaborators}
+              onChange={(e) => patch({ collaborators: e.target.value })}
+              className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">Colaboradores</label>
+              <label className="mb-1 block text-xs font-medium text-gray-600">Fecha de inicio</label>
               <input
-                value={draft.collaborators}
-                onChange={(e) => patch({ collaborators: e.target.value })}
+                type="date"
+                value={draft.startDate ?? ''}
+                onChange={(e) => patch({ startDate: e.target.value || null })}
                 className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
               />
+              {!draft.startDate && (
+                <p className="mt-1 text-[11px] text-gray-400">
+                  Sin definir: se usa la fecha de creación ({formatDateOnly(draft.createdAt.slice(0, 10))}).
+                </p>
+              )}
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600">Deadline</label>
@@ -142,7 +163,7 @@ export function ProjectDetailPanel({ project, tasks, isNew, dispatch, onClose, o
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600">Tag</label>
               <select
@@ -171,6 +192,25 @@ export function ProjectDetailPanel({ project, tasks, isNew, dispatch, onClose, o
                 ))}
               </select>
             </div>
+          </div>
+
+          <div className="flex items-center justify-between rounded-md border border-gray-200 p-3">
+            <div>
+              <label className="flex items-center gap-1.5 text-xs text-gray-600">
+                <input type="checkbox" checked={customColorEnabled} onChange={(e) => toggleCustomColor(e.target.checked)} />
+                Personalizar color de este proyecto
+              </label>
+              <p className="mt-1 text-[11px] text-gray-400">
+                Sin personalizar usa el color del tag «{PROJECT_COLOR_TAGS[draft.colorTag].label}».
+              </p>
+            </div>
+            <input
+              type="color"
+              disabled={!customColorEnabled}
+              value={draft.color ?? tagColor(draft.colorTag, tagColors)}
+              onChange={(e) => patch({ color: e.target.value })}
+              className="h-8 w-12 shrink-0 cursor-pointer rounded border border-gray-300 disabled:cursor-not-allowed disabled:opacity-40"
+            />
           </div>
 
           <div className="rounded-md border border-gray-200 p-3">

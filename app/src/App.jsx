@@ -124,20 +124,20 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="border-b border-gray-200 bg-white">
-        <div className="mx-auto flex max-w-5xl items-start justify-between px-4 py-3">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-start justify-between gap-2 px-4 py-3">
           <div>
             <h1 className="text-lg font-semibold text-gray-900">Gestor Académico</h1>
             <p className="text-xs text-gray-500">Tareas y proyectos — geología estructural</p>
           </div>
           {state.hydrated && <BackupControls state={state} dispatch={dispatch} onImported={handleBackupImported} />}
         </div>
-        <nav className="mx-auto flex max-w-5xl gap-1 px-4">
+        <nav className="mx-auto flex max-w-5xl gap-1 overflow-x-auto px-4">
           {TABS.map(({ key, label, icon: Icon }) => (
             <button
               key={key}
               type="button"
               onClick={() => changeTab(key)}
-              className={`flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium ${
+              className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium ${
                 activeTab === key
                   ? 'border-blue-600 text-blue-700'
                   : 'border-transparent text-gray-500 hover:text-gray-800'
@@ -168,6 +168,8 @@ export default function App() {
               <ProjectsTab
                 projects={state.projects}
                 tasks={state.tasks}
+                tagColors={state.meta.tagColors}
+                dispatch={dispatch}
                 onOpenProject={handleOpenProject}
                 onCreateProject={handleCreateProject}
               />
@@ -176,6 +178,8 @@ export default function App() {
               <CalendarGanttTab
                 tasks={state.tasks}
                 projects={state.projects}
+                tagColors={state.meta.tagColors}
+                dispatch={dispatch}
                 onOpenTask={handleOpenTask}
                 onOpenProject={handleOpenProject}
               />
@@ -189,6 +193,7 @@ export default function App() {
           project={openProject.project}
           isNew={openProject.isNew}
           tasks={state.tasks}
+          tagColors={state.meta.tagColors}
           dispatch={dispatch}
           onClose={() => setOpenProject(null)}
           onDelete={handleDeleteProject}

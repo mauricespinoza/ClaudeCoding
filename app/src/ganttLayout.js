@@ -20,7 +20,7 @@ export function taskBarRange(task) {
   return end < start ? [end, start] : [start, end]
 }
 
-function unionRange(ranges) {
+export function unionRange(ranges) {
   if (ranges.length === 0) return null
   let min = ranges[0][0]
   let max = ranges[0][1]
@@ -45,6 +45,15 @@ export function projectWindow(project, tasks) {
   return [start, end]
 }
 
+// Ventana "todos los proyectos": envolvente de las fechas de todas las
+// tareas visibles (ya filtradas por el llamador a proyectos no archivados).
+export function multiProjectWindow(tasks) {
+  const union = unionRange(tasks.map(taskBarRange))
+  if (union) return [timeDay.offset(union[0], -1), timeDay.offset(union[1], 1)]
+  const start = timeDay.floor(new Date())
+  return [start, timeDay.offset(start, 30)]
+}
+
 export function weekWindow(cursor) {
   const start = timeWeek.floor(cursor)
   return [start, timeWeek.offset(start, 1)]
@@ -62,6 +71,8 @@ export function semesterWindow(cursor) {
   return [start, timeMonth.offset(start, 6)]
 }
 
+// project === null significa "todos los proyectos": la ventana "proyecto
+// completo" se calcula sobre la unión de todas las tareas visibles.
 export function windowFor(zoom, cursor, project, tasks) {
   switch (zoom) {
     case ZOOM_LEVELS.WEEK:
@@ -72,7 +83,7 @@ export function windowFor(zoom, cursor, project, tasks) {
       return semesterWindow(cursor)
     case ZOOM_LEVELS.PROJECT:
     default:
-      return projectWindow(project, tasks)
+      return project ? projectWindow(project, tasks) : multiProjectWindow(tasks)
   }
 }
 

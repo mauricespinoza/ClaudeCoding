@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { CalendarView } from './CalendarView.jsx'
 import { GanttView } from './GanttView.jsx'
 
-export function CalendarGanttTab({ tasks, projects, onOpenTask, onOpenProject }) {
+export function CalendarGanttTab({ tasks, projects, tagColors, dispatch, onOpenTask, onOpenProject }) {
   const [subView, setSubView] = useState('calendar')
 
   return (
@@ -26,9 +26,15 @@ export function CalendarGanttTab({ tasks, projects, onOpenTask, onOpenProject })
       </div>
 
       {subView === 'calendar' ? (
-        <CalendarView tasks={tasks} projects={projects} onOpenTask={onOpenTask} onOpenProject={onOpenProject} />
+        <CalendarView
+          tasks={tasks}
+          projects={projects}
+          tagColors={tagColors}
+          onOpenTask={onOpenTask}
+          onOpenProject={onOpenProject}
+        />
       ) : (
-        <GanttView tasks={tasks} projects={projects} onOpenTask={onOpenTask} />
+        <GanttView tasks={tasks} projects={projects} tagColors={tagColors} dispatch={dispatch} onOpenTask={onOpenTask} />
       )}
     </div>
   )

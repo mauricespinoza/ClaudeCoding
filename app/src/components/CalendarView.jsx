@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
-import { todayDateOnly } from '../model.js'
+import { projectColor, todayDateOnly } from '../model.js'
+import { chipStyle } from '../color.js'
 import {
   addDays,
   addMonths,
@@ -30,12 +31,13 @@ function buildItemsByDate(tasks, projects) {
   return map
 }
 
-function ItemChip({ item }) {
+function ItemChip({ item, tagColors }) {
   const label = item.entity.name || 'Sin nombre'
   if (item.type === 'project') {
+    const color = projectColor(item.entity, tagColors)
     return (
-      <span className="flex items-center gap-1 truncate rounded bg-violet-100 px-1 py-0.5 text-[11px] text-violet-800">
-        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-violet-500" />
+      <span className="flex items-center gap-1 truncate rounded px-1 py-0.5 text-[11px]" style={chipStyle(color)}>
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
         <span className="truncate">{label}</span>
       </span>
     )
@@ -85,7 +87,7 @@ function DayDetailModal({ date, items, onClose, onOpenTask, onOpenProject }) {
   )
 }
 
-export function CalendarView({ tasks, projects, onOpenTask, onOpenProject }) {
+export function CalendarView({ tasks, projects, tagColors, onOpenTask, onOpenProject }) {
   const [mode, setMode] = useState('month')
   const [cursor, setCursor] = useState(todayDateOnly())
   const [selectedDate, setSelectedDate] = useState(null)
@@ -149,7 +151,7 @@ export function CalendarView({ tasks, projects, onOpenTask, onOpenProject }) {
               key={date}
               type="button"
               onClick={() => setSelectedDate(date)}
-              className={`flex min-h-[92px] flex-col items-stretch gap-1 bg-white p-1.5 text-left hover:bg-blue-50 ${
+              className={`flex min-h-[64px] flex-col items-stretch gap-1 bg-white p-1 text-left hover:bg-blue-50 sm:min-h-[92px] sm:p-1.5 ${
                 inMonth ? '' : 'bg-gray-50 text-gray-400'
               }`}
             >
@@ -162,7 +164,7 @@ export function CalendarView({ tasks, projects, onOpenTask, onOpenProject }) {
               </span>
               <div className="space-y-0.5 overflow-hidden">
                 {items.slice(0, mode === 'month' ? 2 : 6).map((item) => (
-                  <ItemChip key={`${item.type}-${item.entity.id}`} item={item} />
+                  <ItemChip key={`${item.type}-${item.entity.id}`} item={item} tagColors={tagColors} />
                 ))}
                 {items.length > (mode === 'month' ? 2 : 6) && (
                   <span className="block text-[10px] text-gray-400">
