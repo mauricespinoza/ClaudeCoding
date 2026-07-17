@@ -15,6 +15,7 @@ import { emptyTask, emptyProject, emptyMeeting, DEFAULT_SUBTITLE } from './model
 import { notifyDueTasks } from './notifications.js'
 import { createCloudBackend, getSession } from './cloud.js'
 import { EisenhowerMatrix } from './components/EisenhowerMatrix.jsx'
+import { QuickNoteWidget } from './components/QuickNoteWidget.jsx'
 import { TaskModal } from './components/TaskModal.jsx'
 import { ProjectsTab } from './components/ProjectsTab.jsx'
 import { ProjectDetailPanel } from './components/ProjectDetailPanel.jsx'
@@ -341,13 +342,16 @@ export default function App() {
         ) : (
           <>
             {activeTab === 'tasks' && (
-              <EisenhowerMatrix
-                tasks={state.tasks}
-                projects={projectOptions}
-                onOpenTask={handleOpenTask}
-                onCreateTask={handleCreateTask}
-                onQuickVoiceCreate={handleQuickVoiceCreate}
-              />
+              <>
+                <QuickNoteWidget projects={projectOptions} dispatchAndPersist={dispatchAndPersist} />
+                <EisenhowerMatrix
+                  tasks={state.tasks}
+                  projects={projectOptions}
+                  onOpenTask={handleOpenTask}
+                  onCreateTask={handleCreateTask}
+                  onQuickVoiceCreate={handleQuickVoiceCreate}
+                />
+              </>
             )}
             {activeTab === 'projects' && (
               <ProjectsTab
