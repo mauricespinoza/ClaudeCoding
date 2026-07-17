@@ -1,0 +1,11 @@
+{
+  "name": "Gestor Académico",
+  "short_name": "Gestor Académico",
+  "description": "Tareas, proyectos, reuniones y bitácora de ideas para investigación académica.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#f9fafb",
+  "theme_color": "#2563eb",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
