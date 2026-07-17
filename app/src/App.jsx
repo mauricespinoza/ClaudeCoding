@@ -1,21 +1,35 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
-import { CalendarDays, ClipboardList, FolderKanban, GanttChart, Pencil } from 'lucide-react'
+import { CalendarDays, ClipboardList, FolderKanban, GanttChart, Pencil, Users } from 'lucide-react'
 import { appReducer, initialState } from './reducer.js'
-import { loadAll, saveProjects, saveTasks, saveMeta, createDebouncedWriter } from './storage.js'
-import { emptyTask, emptyProject, DEFAULT_SUBTITLE } from './model.js'
+import {
+  loadAll,
+  saveAll,
+  saveProjects,
+  saveTasks,
+  saveMeta,
+  saveMeetings,
+  setStorageBackend,
+  createDebouncedWriter,
+} from './storage.js'
+import { emptyTask, emptyProject, emptyMeeting, DEFAULT_SUBTITLE } from './model.js'
 import { notifyDueTasks } from './notifications.js'
+import { createCloudBackend, getSession } from './cloud.js'
 import { EisenhowerMatrix } from './components/EisenhowerMatrix.jsx'
 import { TaskModal } from './components/TaskModal.jsx'
 import { ProjectsTab } from './components/ProjectsTab.jsx'
 import { ProjectDetailPanel } from './components/ProjectDetailPanel.jsx'
 import { CalendarView } from './components/CalendarView.jsx'
 import { GanttView } from './components/GanttView.jsx'
+import { MeetingsTab } from './components/MeetingsTab.jsx'
+import { MeetingModal } from './components/MeetingModal.jsx'
 import { BackupControls } from './components/BackupControls.jsx'
 import { NotificationsControl } from './components/NotificationsControl.jsx'
+import { AccountControl } from './components/AccountControl.jsx'
 
 const TABS = [
   { key: 'tasks', label: 'Tareas', icon: ClipboardList },
   { key: 'projects', label: 'Proyectos', icon: FolderKanban },
+  { key: 'meetings', label: 'Reuniones', icon: Users },
   { key: 'calendar', label: 'Calendario', icon: CalendarDays },
   { key: 'gantt', label: 'Gantt', icon: GanttChart },
 ]
@@ -25,20 +39,41 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('tasks')
   const [openTask, setOpenTask] = useState(null) // { task, isNew }
   const [openProject, setOpenProject] = useState(null) // { project, isNew }
+  const [openMeeting, setOpenMeeting] = useState(null) // { meeting, isNew }
   const [editingSubtitle, setEditingSubtitle] = useState(false)
   const [subtitleDraft, setSubtitleDraft] = useState('')
+  const [cloudSession, setCloudSession] = useState(null)
   const notifiedRef = useRef(false)
 
   const projectsWriter = useRef(createDebouncedWriter(saveProjects))
   const tasksWriter = useRef(createDebouncedWriter(saveTasks))
   const metaWriter = useRef(createDebouncedWriter(saveMeta))
+  const meetingsWriter = useRef(createDebouncedWriter(saveMeetings))
 
-  // Carga inicial (Fase 0): una lectura de cada colección al montar.
+  // Carga inicial: si hay una sesión de nube guardada (login previo en este
+  // dispositivo), se activa el backend de nube ANTES de leer; si no, se lee
+  // del almacenamiento local como siempre. Si la nube falla (sin red), se
+  // cae al modo local en vez de dejar la app en blanco.
   useEffect(() => {
     let cancelled = false
-    loadAll().then((data) => {
-      if (!cancelled) dispatch({ type: 'HYDRATE', payload: data })
-    })
+    ;(async () => {
+      try {
+        const session = await getSession()
+        if (session) {
+          setStorageBackend(createCloudBackend())
+          if (!cancelled) setCloudSession(session)
+        }
+        const data = await loadAll()
+        if (!cancelled) dispatch({ type: 'HYDRATE', payload: data })
+      } catch {
+        setStorageBackend(null)
+        if (!cancelled) {
+          setCloudSession(null)
+          const data = await loadAll()
+          if (!cancelled) dispatch({ type: 'HYDRATE', payload: data })
+        }
+      }
+    })()
     return () => {
       cancelled = true
     }
@@ -59,6 +94,11 @@ export default function App() {
     if (!state.hydrated) return
     metaWriter.current.schedule(state.meta)
   }, [state.hydrated, state.meta])
+
+  useEffect(() => {
+    if (!state.hydrated) return
+    meetingsWriter.current.schedule(state.meetings)
+  }, [state.hydrated, state.meetings])
 
   // Aviso de tareas vencidas/con deadline hoy al abrir la app (una vez por
   // sesión), solo si el usuario activó notificaciones en una sesión previa
@@ -88,6 +128,7 @@ export default function App() {
       parts.map((part) => {
         if (part === 'tasks') return saveTasks(nextState.tasks)
         if (part === 'projects') return saveProjects(nextState.projects)
+        if (part === 'meetings') return saveMeetings(nextState.meetings)
         return saveMeta(nextState.meta)
       }),
     )
@@ -171,7 +212,66 @@ export default function App() {
   // inmediato con los datos recién importados (el efecto de persistencia
   // debounced todavía no corrió con el nuevo estado en este punto).
   const handleBackupImported = async (data) => {
-    await Promise.all([saveProjects(data.projects), saveTasks(data.tasks), saveMeta(data.meta)])
+    await Promise.all([
+      saveProjects(data.projects),
+      saveTasks(data.tasks),
+      saveMeta(data.meta),
+      saveMeetings(data.meetings ?? []),
+    ])
+  }
+
+  // ---- Reuniones ----
+
+  const handleCreateMeeting = () => setOpenMeeting({ meeting: emptyMeeting(), isNew: true })
+
+  const handleOpenMeeting = (meeting) => setOpenMeeting({ meeting, isNew: false })
+
+  const handleSaveMeeting = async (draft) => {
+    const action = openMeeting?.isNew
+      ? { type: 'ADD_MEETING', payload: { meeting: draft } }
+      : { type: 'UPDATE_MEETING', payload: { id: draft.id, patch: draft } }
+    setOpenMeeting(null)
+    await dispatchAndPersist(action, ['meetings'])
+  }
+
+  const handleDeleteMeeting = async (id) => {
+    setOpenMeeting(null)
+    await dispatchAndPersist({ type: 'DELETE_MEETING', payload: { id } }, ['meetings'])
+  }
+
+  // ---- Nube ----
+
+  // Tras iniciar sesión: cambiar el backend a la nube y recargar desde ahí.
+  // Si la nube está vacía y este dispositivo tiene datos locales, se ofrece
+  // subirlos (típico primer login desde el computador de siempre).
+  const handleSignedIn = async (session) => {
+    const localState = state
+    setStorageBackend(createCloudBackend())
+    setCloudSession(session)
+    const cloudData = await loadAll()
+
+    const cloudIsEmpty = cloudData.projects.length === 0 && cloudData.tasks.length === 0
+    const localHasData = localState.projects.length > 0 || localState.tasks.length > 0
+    if (cloudIsEmpty && localHasData) {
+      const upload = window.confirm(
+        `Tu cuenta en la nube está vacía y este dispositivo tiene ${localState.projects.length} proyecto(s) y ` +
+          `${localState.tasks.length} tarea(s) locales. ¿Subirlos a la nube para usarlos en todos tus dispositivos?`,
+      )
+      if (upload) {
+        await saveAll(localState)
+        return // el estado en pantalla ya es el correcto; quedó copiado a la nube
+      }
+    }
+    dispatch({ type: 'HYDRATE', payload: cloudData })
+  }
+
+  // Al cerrar sesión se vuelve al modo local y se recarga lo que haya en
+  // este dispositivo (los datos de la nube quedan intactos en el servidor).
+  const handleSignedOut = async () => {
+    setStorageBackend(null)
+    setCloudSession(null)
+    const data = await loadAll()
+    dispatch({ type: 'HYDRATE', payload: data })
   }
 
   return (
@@ -206,6 +306,7 @@ export default function App() {
           </div>
           {state.hydrated && (
             <div className="flex flex-wrap items-center gap-1.5">
+              <AccountControl session={cloudSession} onSignedIn={handleSignedIn} onSignedOut={handleSignedOut} />
               <NotificationsControl
                 enabled={state.meta.notificationsEnabled}
                 tasks={state.tasks}
@@ -258,6 +359,15 @@ export default function App() {
                 onCreateProject={handleCreateProject}
               />
             )}
+            {activeTab === 'meetings' && (
+              <MeetingsTab
+                meetings={state.meetings}
+                projects={projectOptions}
+                tagColors={state.meta.tagColors}
+                onOpenMeeting={handleOpenMeeting}
+                onCreateMeeting={handleCreateMeeting}
+              />
+            )}
             {activeTab === 'calendar' && (
               <CalendarView
                 tasks={state.tasks}
@@ -294,6 +404,17 @@ export default function App() {
           onDelete={handleDeleteProject}
           onOpenTask={handleOpenTask}
           onCreateTask={handleCreateTaskInProject}
+        />
+      )}
+
+      {openMeeting && (
+        <MeetingModal
+          meeting={openMeeting.meeting}
+          isNew={openMeeting.isNew}
+          projects={projectOptions}
+          onClose={() => setOpenMeeting(null)}
+          onSave={handleSaveMeeting}
+          onDelete={handleDeleteMeeting}
         />
       )}
 

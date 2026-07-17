@@ -17,6 +17,7 @@ export const initialState = {
   hydrated: false,
   projects: [],
   tasks: [],
+  meetings: [],
   meta: defaultMeta(),
 }
 
@@ -49,6 +50,7 @@ export function appReducer(state, action) {
         hydrated: true,
         projects: action.payload.projects,
         tasks: action.payload.tasks,
+        meetings: action.payload.meetings ?? [],
         meta: action.payload.meta,
       }
 
@@ -265,6 +267,42 @@ export function appReducer(state, action) {
         tasks: [...state.tasks, ...newTasks],
       }
     }
+
+    // ---- Notas categorizadas del proyecto (Idea/Dato/Hipótesis/GAP) ----
+
+    case 'ADD_IDEA_NOTE':
+      return {
+        ...state,
+        projects: updateProjectById(state.projects, action.payload.projectId, (p) => ({
+          ...p,
+          ideaNotes: [...(p.ideaNotes ?? []), action.payload.note],
+        })),
+      }
+
+    case 'REMOVE_IDEA_NOTE':
+      return {
+        ...state,
+        projects: updateProjectById(state.projects, action.payload.projectId, (p) => ({
+          ...p,
+          ideaNotes: (p.ideaNotes ?? []).filter((n) => n.id !== action.payload.noteId),
+        })),
+      }
+
+    // ---- Reuniones ----
+
+    case 'ADD_MEETING':
+      return { ...state, meetings: [...state.meetings, action.payload.meeting] }
+
+    case 'UPDATE_MEETING':
+      return {
+        ...state,
+        meetings: state.meetings.map((m) =>
+          m.id === action.payload.id ? touch({ ...m, ...action.payload.patch }) : m,
+        ),
+      }
+
+    case 'DELETE_MEETING':
+      return { ...state, meetings: state.meetings.filter((m) => m.id !== action.payload.id) }
 
     default:
       return state

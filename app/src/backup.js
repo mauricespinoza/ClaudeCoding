@@ -4,6 +4,8 @@
 // real de artifacts; (2) que el usuario tenga su propia copia de seguridad
 // sin depender de ningún backend.
 
+import { defaultMeta } from './model.js'
+
 const SCHEMA_VERSION = 1
 
 export function buildBackup(state) {
@@ -13,6 +15,7 @@ export function buildBackup(state) {
       exportedAt: new Date().toISOString(),
       projects: state.projects,
       tasks: state.tasks,
+      meetings: state.meetings ?? [],
       meta: state.meta,
     },
     null,
@@ -55,7 +58,8 @@ export function parseBackupFile(rawText) {
     data: {
       projects: parsed.projects,
       tasks: parsed.tasks,
-      meta: parsed.meta && typeof parsed.meta === 'object' ? parsed.meta : { schemaVersion: SCHEMA_VERSION, lastTab: 'tasks' },
+      meetings: Array.isArray(parsed.meetings) ? parsed.meetings : [],
+      meta: parsed.meta && typeof parsed.meta === 'object' ? { ...defaultMeta(), ...parsed.meta } : defaultMeta(),
     },
   }
 }

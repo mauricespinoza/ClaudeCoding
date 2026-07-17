@@ -6,6 +6,7 @@ import { requestAISuggestions } from '../aiSuggest.js'
 import { TaskCard } from './TaskCard.jsx'
 import { AISuggestionsReview } from './AISuggestionsReview.jsx'
 import { IcsExportButton } from './IcsExportButton.jsx'
+import { IdeaNotesSection } from './IdeaNotesSection.jsx'
 
 const IMPORTANCE_OPTIONS = [
   { value: 1, label: 'Baja' },
@@ -25,7 +26,7 @@ export function ProjectDetailPanel({
   onOpenTask,
   onCreateTask,
 }) {
-  const [draft, setDraft] = useState({ notes: '', ...project })
+  const [draft, setDraft] = useState({ notes: '', ideaNotes: [], ...project })
   const [newActivityName, setNewActivityName] = useState('')
   const [overrideEnabled, setOverrideEnabled] = useState(project.completionOverride != null)
   const [customColorEnabled, setCustomColorEnabled] = useState(project.color != null)
@@ -148,11 +149,13 @@ export function ProjectDetailPanel({
             <textarea
               value={draft.notes}
               onChange={(e) => patch({ notes: e.target.value })}
-              rows={4}
+              rows={3}
               placeholder="Ideas, avances, recordatorios sueltos sobre el proyecto…"
               className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
             />
           </div>
+
+          <IdeaNotesSection draft={draft} patch={patch} tasks={tasks} aiConfig={aiConfig} />
 
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-600">Colaboradores</label>
@@ -296,11 +299,42 @@ export function ProjectDetailPanel({
                       onChange={(e) => setAiConfig({ provider: e.target.value })}
                       className="rounded border border-gray-300 px-2 py-1"
                     >
+                      <option value="gemini">Google Gemini (gratis con key propia)</option>
                       <option value="claude">Claude (API key)</option>
                       <option value="ollama">Ollama local (gratis)</option>
                     </select>
                   </div>
-                  {aiConfig.provider === 'ollama' ? (
+                  {aiConfig.provider === 'gemini' && (
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-0.5 block text-gray-500">API key de Gemini</label>
+                        <input
+                          type="password"
+                          value={aiConfig.geminiKey}
+                          onChange={(e) => setAiConfig({ geminiKey: e.target.value })}
+                          placeholder="AIza…"
+                          className="w-full rounded border border-gray-300 px-2 py-1"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-0.5 block text-gray-500">Modelo</label>
+                        <input
+                          value={aiConfig.geminiModel}
+                          onChange={(e) => setAiConfig({ geminiModel: e.target.value })}
+                          placeholder="gemini-2.0-flash"
+                          className="w-full rounded border border-gray-300 px-2 py-1"
+                        />
+                      </div>
+                      <p className="col-span-full text-[11px] text-gray-400">
+                        Crea tu key gratis en{' '}
+                        <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="underline">
+                          aistudio.google.com/apikey
+                        </a>
+                        . Se guarda en tu storage personal — no compartas tu respaldo JSON con la key adentro.
+                      </p>
+                    </div>
+                  )}
+                  {aiConfig.provider === 'ollama' && (
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                       <div>
                         <label className="mb-0.5 block text-gray-500">URL de Ollama</label>
@@ -327,7 +361,8 @@ export function ProjectDetailPanel({
                         instalado y corriendo (`ollama serve`) con el modelo descargado (`ollama pull {aiConfig.ollamaModel || 'llama3.1'}`).
                       </p>
                     </div>
-                  ) : (
+                  )}
+                  {aiConfig.provider === 'claude' && (
                     <p className="text-[11px] text-gray-400">
                       Requiere una API key de Anthropic configurada en el entorno (VITE_ANTHROPIC_API_KEY).
                     </p>

@@ -126,18 +126,21 @@ export function parseAISuggestions(rawText, { projectDeadline = null } = {}) {
   return { ok: true, activities }
 }
 
-// Llamado real a la API de Claude. En el host de artifacts, `fetch` a
-// api.anthropic.com está soportado sin exponer una key en el cliente
-// (ARQUITECTURA.md §5). Fuera de ese host (este repo, desarrollo local) no
-// hay backend propio: se usa una key de desarrollo opcional vía variable de
-// entorno, solo para probar el flujo end-to-end; nunca debe usarse así en
-// producción real.
-async function requestFromClaude(project) {
+// ---- Proveedores ----------------------------------------------------------
+// Los tres proveedores comparten la misma interfaz: reciben (systemPrompt,
+// userPrompt) y devuelven el texto crudo de la respuesta. El parseo/
+// validación es idéntico sea cual sea el proveedor.
+
+// API de Claude. En el host de artifacts, `fetch` a api.anthropic.com está
+// soportado sin exponer una key en el cliente (ARQUITECTURA.md §5). Fuera de
+// ese host no hay backend propio: se usa una key de desarrollo opcional vía
+// variable de entorno, solo para probar el flujo end-to-end.
+async function callClaude(systemPrompt, userPrompt) {
   const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY
   if (!apiKey) {
     throw new Error(
-      'La API de Claude no está configurada en este entorno de desarrollo (falta VITE_ANTHROPIC_API_KEY). ' +
-        'En el host de artifacts este llamado se resuelve sin exponer una key en el cliente.',
+      'La API de Claude no está configurada en este entorno (falta VITE_ANTHROPIC_API_KEY). ' +
+        'Puedes cambiar a Gemini (gratis, con key propia) u Ollama local en el engranaje de IA.',
     )
   }
 
@@ -152,27 +155,60 @@ async function requestFromClaude(project) {
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
       max_tokens: 2000,
-      system: AI_SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: buildUserPrompt(project) }],
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }],
     }),
   })
 
-  if (!response.ok) {
-    throw new Error(`La API de Claude respondió con error ${response.status}.`)
-  }
+  if (!response.ok) throw new Error(`La API de Claude respondió con error ${response.status}.`)
 
   const data = await response.json()
   return data.content?.map((block) => block.text ?? '').join('') ?? ''
 }
 
-// Alternativa gratuita y sin registro: un modelo corriendo localmente vía
-// Ollama (https://ollama.com), gratis y privado (no sale de la máquina del
-// usuario). Requiere tener Ollama instalado, corriendo (`ollama serve`) y el
-// modelo descargado (`ollama pull llama3.1`). Por defecto Ollama solo acepta
-// peticiones desde localhost: si esta app corre en otro origen puede hacer
-// falta iniciar Ollama con `OLLAMA_ORIGINS=*` para permitir el fetch desde
-// el navegador (CORS).
-async function requestFromOllama(project, { ollamaUrl, ollamaModel }) {
+// Google Gemini: tiene capa gratuita generosa. La key se crea gratis en
+// https://aistudio.google.com/apikey y se pega en el engranaje de IA (queda
+// guardada en meta.ai.geminiKey, es decir en el storage personal del
+// usuario — aceptable para una app de uso individual, pero no debe
+// compartirse el respaldo JSON con la key adentro).
+async function callGemini(systemPrompt, userPrompt, { geminiKey, geminiModel }) {
+  if (!geminiKey) {
+    throw new Error(
+      'Falta la API key de Gemini. Créala gratis en aistudio.google.com/apikey y pégala en el engranaje de IA.',
+    )
+  }
+
+  const model = geminiModel || 'gemini-2.0-flash'
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(geminiKey)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: systemPrompt }] },
+        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+      }),
+    },
+  )
+
+  if (!response.ok) {
+    if (response.status === 400 || response.status === 403) {
+      throw new Error('Gemini rechazó la API key (¿está bien copiada?).')
+    }
+    if (response.status === 429) {
+      throw new Error('Gemini alcanzó el límite gratuito por ahora; intenta en unos minutos.')
+    }
+    throw new Error(`Gemini respondió con error ${response.status}.`)
+  }
+
+  const data = await response.json()
+  return data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('') ?? ''
+}
+
+// Ollama local (https://ollama.com): gratis y privado, corre en la máquina
+// del usuario. Requiere `ollama serve` y el modelo descargado. Si la app no
+// está en localhost puede hacer falta OLLAMA_ORIGINS=* (CORS).
+async function callOllama(systemPrompt, userPrompt, { ollamaUrl, ollamaModel }) {
   let response
   try {
     response = await fetch(`${ollamaUrl.replace(/\/$/, '')}/api/chat`, {
@@ -181,10 +217,9 @@ async function requestFromOllama(project, { ollamaUrl, ollamaModel }) {
       body: JSON.stringify({
         model: ollamaModel,
         stream: false,
-        format: 'json',
         messages: [
-          { role: 'system', content: AI_SYSTEM_PROMPT },
-          { role: 'user', content: buildUserPrompt(project) },
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
         ],
       }),
     })
@@ -203,11 +238,71 @@ async function requestFromOllama(project, { ollamaUrl, ollamaModel }) {
   return data.message?.content ?? ''
 }
 
-export async function requestAISuggestions(project, aiConfig) {
-  const rawText =
-    aiConfig?.provider === 'ollama' ? await requestFromOllama(project, aiConfig) : await requestFromClaude(project)
+export async function callAI(systemPrompt, userPrompt, aiConfig) {
+  if (aiConfig?.provider === 'ollama') return callOllama(systemPrompt, userPrompt, aiConfig)
+  if (aiConfig?.provider === 'gemini') return callGemini(systemPrompt, userPrompt, aiConfig)
+  return callClaude(systemPrompt, userPrompt)
+}
 
+export async function requestAISuggestions(project, aiConfig) {
+  const rawText = await callAI(AI_SYSTEM_PROMPT, buildUserPrompt(project), aiConfig)
   const result = parseAISuggestions(rawText, { projectDeadline: project.deadline })
   if (!result.ok) throw new Error(result.error)
   return result.activities
+}
+
+// ---- Análisis de la bitácora de notas (Idea/Dato/Hipótesis/GAP) ----------
+// A diferencia de las sugerencias de actividades, aquí la salida es texto
+// libre para leer (no se inserta nada automáticamente), así que no se exige
+// JSON: menos fricción y funciona bien incluso con modelos locales chicos.
+
+export const NOTES_ANALYSIS_SYSTEM_PROMPT = `Eres un asesor de investigación para un académico en geología estructural.
+Recibirás la bitácora de un proyecto: notas clasificadas como Idea (ocurrencias
+por explorar), Dato (evidencia u observación concreta), Hipótesis (explicación
+tentativa) y GAP (vacío de conocimiento detectado), junto con el objetivo del
+proyecto y el estado de sus tareas.
+
+Tu trabajo:
+1. Conectar datos con hipótesis: ¿qué evidencia apoya o contradice cada hipótesis?
+2. Señalar qué GAPs son abordables ahora y cuáles requieren datos nuevos.
+3. Proponer 3 a 5 pasos concretos y accionables (verbo + entregable), indicando
+   en qué notas te basas.
+4. Si detectas ideas prometedoras sin desarrollar, dilo explícitamente.
+
+Formato: texto plano en español, con secciones breves y viñetas. Sé específico
+y crítico; no repitas las notas, analízalas. Máximo ~350 palabras.`
+
+export function buildNotesAnalysisPrompt(project, tasks) {
+  const notes = project.ideaNotes ?? []
+  const byCategory = { idea: [], dato: [], hipotesis: [], gap: [] }
+  for (const note of notes) {
+    ;(byCategory[note.category] ?? byCategory.idea).push(note.text)
+  }
+
+  const taskSummary = tasks
+    .filter((t) => t.projectId === project.id)
+    .map((t) => `- [${t.status}] ${t.name}`)
+    .join('\n')
+
+  return [
+    `Proyecto: ${project.name}`,
+    `Objetivo: ${project.objective || '(sin objetivo)'}`,
+    '',
+    `IDEAS:\n${byCategory.idea.map((t) => `- ${t}`).join('\n') || '(ninguna)'}`,
+    `DATOS:\n${byCategory.dato.map((t) => `- ${t}`).join('\n') || '(ninguno)'}`,
+    `HIPÓTESIS:\n${byCategory.hipotesis.map((t) => `- ${t}`).join('\n') || '(ninguna)'}`,
+    `GAPS:\n${byCategory.gap.map((t) => `- ${t}`).join('\n') || '(ninguno)'}`,
+    '',
+    `Tareas del proyecto:\n${taskSummary || '(sin tareas)'}`,
+  ].join('\n')
+}
+
+export async function requestNotesAnalysis(project, tasks, aiConfig) {
+  const notes = project.ideaNotes ?? []
+  if (notes.length === 0) {
+    throw new Error('Agrega al menos una nota (Idea/Dato/Hipótesis/GAP) antes de pedir el análisis.')
+  }
+  const text = await callAI(NOTES_ANALYSIS_SYSTEM_PROMPT, buildNotesAnalysisPrompt(project, tasks), aiConfig)
+  if (!text.trim()) throw new Error('La IA devolvió una respuesta vacía; intenta de nuevo.')
+  return text.trim()
 }

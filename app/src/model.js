@@ -116,6 +116,9 @@ export const newTaskId = () => makeId('t')
 export const newProjectId = () => makeId('p')
 export const newChecklistItemId = () => makeId('c')
 export const newAttachmentId = () => makeId('a')
+export const newNoteId = () => makeId('n')
+export const newMeetingId = () => makeId('m')
+export const newActionId = () => makeId('x')
 
 export const DEFAULT_SUBTITLE = 'Tareas y proyectos — geología estructural'
 
@@ -126,7 +129,46 @@ export function defaultMeta() {
     tagColors: {},
     subtitle: DEFAULT_SUBTITLE,
     notificationsEnabled: false,
-    ai: { provider: 'claude', ollamaUrl: 'http://localhost:11434', ollamaModel: 'llama3.1' },
+    ai: {
+      provider: 'gemini',
+      ollamaUrl: 'http://localhost:11434',
+      ollamaModel: 'llama3.1',
+      geminiKey: '',
+      geminiModel: 'gemini-2.0-flash',
+    },
+  }
+}
+
+// Categorías de las notas de proyecto (bitácora de ideas). "gap" = vacío de
+// conocimiento detectado; la IA usa estas categorías para proponer pasos.
+export const NOTE_CATEGORIES = {
+  idea: { label: 'Idea', color: '#7c3aed' },
+  dato: { label: 'Dato', color: '#0284c7' },
+  hipotesis: { label: 'Hipótesis', color: '#d97706' },
+  gap: { label: 'GAP', color: '#dc2626' },
+}
+
+export function emptyIdeaNote(category, text) {
+  return { id: newNoteId(), category, text, createdAt: nowIso() }
+}
+
+export function emptyMeetingAction() {
+  return { id: newActionId(), text: '', assignee: '', deadline: null, status: STATUS.NOT_STARTED }
+}
+
+export function emptyMeeting({ projectId = null } = {}) {
+  const ts = nowIso()
+  return {
+    id: newMeetingId(),
+    title: '',
+    date: todayDateOnly(),
+    projectId,
+    attendees: '', // texto libre, separado por comas
+    mainIdeas: '',
+    agreements: '',
+    actions: [], // [{ id, text, assignee, deadline, status }]
+    createdAt: ts,
+    updatedAt: ts,
   }
 }
 
@@ -187,6 +229,7 @@ export function emptyProject({ name = '' } = {}) {
     description: '',
     objective: '',
     notes: '',
+    ideaNotes: [], // bitácora categorizada: [{ id, category, text, createdAt }]
     collaborators: '',
     deadline: null,
     startDate: null,
