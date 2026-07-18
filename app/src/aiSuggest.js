@@ -272,37 +272,109 @@ Tu trabajo:
 Formato: texto plano en español, con secciones breves y viñetas. Sé específico
 y crítico; no repitas las notas, analízalas. Máximo ~350 palabras.`
 
-export function buildNotesAnalysisPrompt(project, tasks) {
-  const notes = project.ideaNotes ?? []
+// `notes` es cualquier lista de notas Idea/Dato/Hipótesis/GAP a analizar (las
+// de un proyecto, o una selección arbitraria desde la pestaña Notas incluyendo
+// sueltas); `context` describe de dónde vienen para que el prompt tenga
+// sentido sin acoplarse a la forma de Project.
+export function buildNotesAnalysisPrompt(notes, tasks, context = {}) {
   const byCategory = { idea: [], dato: [], hipotesis: [], gap: [] }
   for (const note of notes) {
     ;(byCategory[note.category] ?? byCategory.idea).push(note.text)
   }
 
-  const taskSummary = tasks
-    .filter((t) => t.projectId === project.id)
-    .map((t) => `- [${t.status}] ${t.name}`)
-    .join('\n')
+  const taskSummary = tasks.map((t) => `- [${t.status}] ${t.name}`).join('\n')
 
   return [
-    `Proyecto: ${project.name}`,
-    `Objetivo: ${project.objective || '(sin objetivo)'}`,
+    `Alcance: ${context.label || 'notas seleccionadas'}`,
+    context.objective ? `Objetivo: ${context.objective}` : null,
     '',
     `IDEAS:\n${byCategory.idea.map((t) => `- ${t}`).join('\n') || '(ninguna)'}`,
     `DATOS:\n${byCategory.dato.map((t) => `- ${t}`).join('\n') || '(ninguno)'}`,
     `HIPÓTESIS:\n${byCategory.hipotesis.map((t) => `- ${t}`).join('\n') || '(ninguna)'}`,
     `GAPS:\n${byCategory.gap.map((t) => `- ${t}`).join('\n') || '(ninguno)'}`,
     '',
-    `Tareas del proyecto:\n${taskSummary || '(sin tareas)'}`,
-  ].join('\n')
+    `Tareas relacionadas:\n${taskSummary || '(sin tareas)'}`,
+  ]
+    .filter((line) => line !== null)
+    .join('\n')
 }
 
-export async function requestNotesAnalysis(project, tasks, aiConfig) {
-  const notes = project.ideaNotes ?? []
+export async function requestNotesAnalysis(notes, tasks, context, aiConfig) {
   if (notes.length === 0) {
     throw new Error('Agrega al menos una nota (Idea/Dato/Hipótesis/GAP) antes de pedir el análisis.')
   }
-  const text = await callAI(NOTES_ANALYSIS_SYSTEM_PROMPT, buildNotesAnalysisPrompt(project, tasks), aiConfig)
+  const text = await callAI(NOTES_ANALYSIS_SYSTEM_PROMPT, buildNotesAnalysisPrompt(notes, tasks, context), aiConfig)
   if (!text.trim()) throw new Error('La IA devolvió una respuesta vacía; intenta de nuevo.')
   return text.trim()
+}
+
+// ---- Asistente de IA para reuniones -------------------------------------
+// A partir de apuntes en bruto (dictados o escritos durante/después de la
+// reunión), propone título, ideas principales, acuerdos y acciones a seguir
+// ya estructurados. El usuario revisa/edita antes de guardar (los campos del
+// modal quedan editables igual que siempre; esto solo los pre-rellena).
+
+export const MEETING_ASSIST_SYSTEM_PROMPT = `Eres un asistente que sistematiza apuntes crudos de una reunión académica
+(investigación en geología estructural) en un registro estructurado.
+
+Reglas:
+- Responde ÚNICAMENTE con un objeto JSON válido, sin markdown, sin \`\`\` y sin
+  texto fuera del JSON.
+- "title": título breve de la reunión si se puede inferir; si no, cadena vacía.
+- "mainIdeas": resumen en prosa breve de los puntos centrales discutidos.
+- "agreements": qué se acordó explícitamente, en prosa breve.
+- "actions": acciones a seguir mencionadas o claramente implícitas, cada una
+  con "text" (qué hay que hacer), "assignee" (responsable si se menciona, si
+  no cadena vacía) y "deadline" ("YYYY-MM-DD" si se menciona una fecha
+  concreta, si no null).
+- No inventes información que no esté en los apuntes.
+- Idioma: español.
+
+Formato exacto:
+{
+  "title": "string",
+  "mainIdeas": "string",
+  "agreements": "string",
+  "actions": [{ "text": "string", "assignee": "string", "deadline": "YYYY-MM-DD" | null }]
+}`
+
+export function parseMeetingAssist(rawText) {
+  const jsonBlock = extractJsonBlock(rawText)
+  if (!jsonBlock) return { ok: false, error: 'La respuesta no contiene un bloque JSON.' }
+
+  let parsed
+  try {
+    parsed = JSON.parse(jsonBlock)
+  } catch {
+    return { ok: false, error: 'El bloque JSON no es válido.' }
+  }
+  if (!parsed || typeof parsed !== 'object') return { ok: false, error: 'Formato inesperado.' }
+
+  const actions = Array.isArray(parsed.actions)
+    ? parsed.actions
+        .map((a) => ({
+          text: typeof a?.text === 'string' ? a.text.trim() : '',
+          assignee: typeof a?.assignee === 'string' ? a.assignee.trim() : '',
+          deadline: isValidDateOnly(a?.deadline) ? a.deadline : null,
+        }))
+        .filter((a) => a.text)
+    : []
+
+  return {
+    ok: true,
+    title: typeof parsed.title === 'string' ? parsed.title.trim() : '',
+    mainIdeas: typeof parsed.mainIdeas === 'string' ? parsed.mainIdeas.trim() : '',
+    agreements: typeof parsed.agreements === 'string' ? parsed.agreements.trim() : '',
+    actions,
+  }
+}
+
+export async function requestMeetingAssist(rawNotes, aiConfig) {
+  if (!rawNotes.trim()) {
+    throw new Error('Dicta o escribe apuntes en bruto antes de pedir la sistematización.')
+  }
+  const rawText = await callAI(MEETING_ASSIST_SYSTEM_PROMPT, rawNotes, aiConfig)
+  const result = parseMeetingAssist(rawText)
+  if (!result.ok) throw new Error(result.error)
+  return result
 }

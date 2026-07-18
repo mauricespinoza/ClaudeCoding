@@ -2,32 +2,30 @@ import { useState } from 'react'
 import { NotebookPen, Plus, X } from 'lucide-react'
 import { NOTE_CATEGORIES, emptyIdeaNote } from '../model.js'
 import { chipStyle } from '../color.js'
+import { VoiceButton } from './VoiceButton.jsx'
 
 // Alta rápida de una nota de bitácora (Idea/Dato/Hipótesis/GAP) sin salir de
-// la pantalla de inicio: elige categoría y proyecto, escribe, listo. La
-// bitácora completa (con filtro y "Analizar con IA") sigue viviendo en el
-// detalle de cada proyecto; esto es solo el atajo para no perder la idea.
+// la pantalla de inicio: elige categoría y proyecto (o "Sin proyecto"),
+// escribe o dicta, listo. La bitácora completa vive en la pestaña Notas.
 export function QuickNoteWidget({ projects, dispatchAndPersist }) {
   const [open, setOpen] = useState(false)
   const [category, setCategory] = useState('idea')
-  const [projectId, setProjectId] = useState(projects[0]?.id ?? '')
+  const [projectId, setProjectId] = useState('')
   const [text, setText] = useState('')
   const [saved, setSaved] = useState(false)
 
-  const canSubmit = text.trim() && projectId
+  const canSubmit = text.trim()
 
   const submit = async () => {
     if (!canSubmit) return
     await dispatchAndPersist(
-      { type: 'ADD_IDEA_NOTE', payload: { projectId, note: emptyIdeaNote(category, text.trim()) } },
-      ['projects'],
+      { type: 'ADD_NOTE', payload: { note: emptyIdeaNote(category, text.trim(), projectId || null) } },
+      ['notes'],
     )
     setText('')
     setSaved(true)
     setTimeout(() => setSaved(false), 1500)
   }
-
-  if (projects.length === 0) return null
 
   if (!open) {
     return (
@@ -74,6 +72,7 @@ export function QuickNoteWidget({ projects, dispatchAndPersist }) {
           onChange={(e) => setProjectId(e.target.value)}
           className="shrink-0 rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:border-blue-400 focus:outline-none"
         >
+          <option value="">Sin proyecto</option>
           {projects.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name}
@@ -84,9 +83,10 @@ export function QuickNoteWidget({ projects, dispatchAndPersist }) {
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), submit())}
-          placeholder="Escribe la nota…"
+          placeholder="Escribe o dicta la nota…"
           className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
         />
+        <VoiceButton onResult={(t) => setText((prev) => (prev ? prev + ' ' : '') + t)} />
         <button
           type="button"
           onClick={submit}

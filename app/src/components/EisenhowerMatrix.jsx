@@ -1,17 +1,35 @@
+import { useState } from 'react'
 import { Plus } from 'lucide-react'
-import { QUADRANTS } from '../model.js'
+import { QUADRANTS, STATUS } from '../model.js'
 import { TaskCard } from './TaskCard.jsx'
 import { VoiceButton } from './VoiceButton.jsx'
 
-export function EisenhowerMatrix({ tasks, projects, onOpenTask, onCreateTask, onQuickVoiceCreate }) {
+// Vista principal: solo tareas no completadas (las completadas se revisan
+// desde el detalle del proyecto o el modal), reordenables por arrastre
+// dentro de cada cuadrante.
+export function EisenhowerMatrix({ tasks, projects, onOpenTask, onCreateTask, onQuickVoiceCreate, dispatchAndPersist }) {
   const projectById = Object.fromEntries(projects.map((p) => [p.id, p]))
+  const [draggedId, setDraggedId] = useState(null)
 
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
       {QUADRANTS.map((q) => {
         const quadrantTasks = tasks
-          .filter((t) => t.important === q.important && t.urgent === q.urgent)
+          .filter((t) => t.important === q.important && t.urgent === q.urgent && t.status !== STATUS.DONE)
           .sort((a, b) => (a.order < b.order ? -1 : 1))
+        const taskIds = quadrantTasks.map((t) => t.id)
+
+        const handleDrop = (targetId) => {
+          if (!draggedId || draggedId === targetId) return setDraggedId(null)
+          const ids = [...taskIds]
+          const fromIdx = ids.indexOf(draggedId)
+          const toIdx = ids.indexOf(targetId)
+          setDraggedId(null)
+          if (fromIdx === -1 || toIdx === -1) return
+          ids.splice(fromIdx, 1)
+          ids.splice(toIdx, 0, draggedId)
+          dispatchAndPersist({ type: 'REORDER_TASKS', payload: { taskIds: ids } }, ['tasks'])
+        }
 
         return (
           <div key={q.key} className={`rounded-xl border ${q.classes.panel} flex flex-col`}>
@@ -37,7 +55,7 @@ export function EisenhowerMatrix({ tasks, projects, onOpenTask, onCreateTask, on
             </div>
             <div className="flex-1 space-y-2 p-3 min-h-[120px]">
               {quadrantTasks.length === 0 && (
-                <p className="px-1 py-4 text-center text-xs text-gray-400">Sin tareas</p>
+                <p className="px-1 py-4 text-center text-xs text-gray-400">Sin tareas pendientes</p>
               )}
               {quadrantTasks.map((task) => (
                 <TaskCard
@@ -45,6 +63,15 @@ export function EisenhowerMatrix({ tasks, projects, onOpenTask, onCreateTask, on
                   task={task}
                   project={task.projectId ? projectById[task.projectId] : null}
                   onOpen={() => onOpenTask(task)}
+                  dispatchAndPersist={dispatchAndPersist}
+                  dragHandlers={{
+                    onDragStart: () => setDraggedId(task.id),
+                    onDragOver: (e) => e.preventDefault(),
+                    onDrop: (e) => {
+                      e.preventDefault()
+                      handleDrop(task.id)
+                    },
+                  }}
                 />
               ))}
             </div>

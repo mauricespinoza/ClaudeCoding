@@ -148,8 +148,12 @@ export const NOTE_CATEGORIES = {
   gap: { label: 'GAP', color: '#dc2626' },
 }
 
-export function emptyIdeaNote(category, text) {
-  return { id: newNoteId(), category, text, createdAt: nowIso() }
+// projectId: null = nota suelta, sin proyecto asociado (visible solo en la
+// pestaña Notas). Antes vivían embebidas en project.ideaNotes; ahora son una
+// colección propia (state.notes) para poder existir sin proyecto.
+export function emptyIdeaNote(category, text, projectId = null) {
+  const ts = nowIso()
+  return { id: newNoteId(), category, text, projectId, createdAt: ts, updatedAt: ts }
 }
 
 export function emptyMeetingAction() {
@@ -229,7 +233,6 @@ export function emptyProject({ name = '' } = {}) {
     description: '',
     objective: '',
     notes: '',
-    ideaNotes: [], // bitácora categorizada: [{ id, category, text, createdAt }]
     collaborators: '',
     deadline: null,
     startDate: null,

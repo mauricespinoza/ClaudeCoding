@@ -1,6 +1,8 @@
 import { useState } from 'react'
-import { Plus, Trash2, X } from 'lucide-react'
-import { STATUS, STATUS_LABEL, emptyMeetingAction } from '../model.js'
+import { BrainCircuit, Loader2, Plus, Trash2, X } from 'lucide-react'
+import { STATUS, STATUS_LABEL, emptyMeetingAction, newActionId } from '../model.js'
+import { requestMeetingAssist } from '../aiSuggest.js'
+import { VoiceButton } from './VoiceButton.jsx'
 
 const STATUS_CYCLE_CLASS = {
   [STATUS.NOT_STARTED]: 'bg-gray-100 text-gray-700 border-gray-300',
@@ -13,10 +15,44 @@ const STATUS_ORDER = [STATUS.NOT_STARTED, STATUS.IN_PROGRESS, STATUS.DONE]
 // Registro estructurado de una reunión: ideas principales, asistentes,
 // acuerdos y acciones a seguir (cada una con responsable y plazo), asociable
 // a un proyecto.
-export function MeetingModal({ meeting, projects, isNew, onClose, onSave, onDelete }) {
+export function MeetingModal({ meeting, projects, isNew, aiConfig, onClose, onSave, onDelete }) {
   const [draft, setDraft] = useState(meeting)
+  const [rawNotes, setRawNotes] = useState('')
+  const [assisting, setAssisting] = useState(false)
+  const [assistError, setAssistError] = useState(null)
 
   const patch = (fields) => setDraft((d) => ({ ...d, ...fields }))
+
+  // IA al inicio de la reunión: a partir de apuntes en bruto (dictados o
+  // escritos ahí mismo), rellena título/ideas/acuerdos/acciones. El usuario
+  // sigue pudiendo editar todo antes de guardar; no reemplaza campos ya
+  // llenos salvo las acciones, que se agregan a las existentes.
+  const runAssist = async () => {
+    setAssistError(null)
+    setAssisting(true)
+    try {
+      const result = await requestMeetingAssist(rawNotes, aiConfig)
+      patch({
+        title: draft.title.trim() || result.title || draft.title,
+        mainIdeas: draft.mainIdeas.trim() ? `${draft.mainIdeas}\n${result.mainIdeas}` : result.mainIdeas,
+        agreements: draft.agreements.trim() ? `${draft.agreements}\n${result.agreements}` : result.agreements,
+        actions: [
+          ...draft.actions,
+          ...result.actions.map((a) => ({
+            id: newActionId(),
+            text: a.text,
+            assignee: a.assignee,
+            deadline: a.deadline,
+            status: STATUS.NOT_STARTED,
+          })),
+        ],
+      })
+    } catch (err) {
+      setAssistError(err.message)
+    } finally {
+      setAssisting(false)
+    }
+  }
 
   const patchAction = (actionId, fields) =>
     patch({ actions: draft.actions.map((a) => (a.id === actionId ? { ...a, ...fields } : a)) })
@@ -45,16 +81,47 @@ export function MeetingModal({ meeting, projects, isNew, onClose, onSave, onDele
         </div>
 
         <div className="max-h-[70vh] space-y-4 overflow-y-auto px-5 py-4">
+          <div className="rounded-md border border-violet-200 bg-violet-50 p-3">
+            <p className="mb-1.5 text-xs font-medium text-violet-900">
+              Asistir con IA: dicta o pega apuntes en bruto y rellena título/ideas/acuerdos/acciones
+            </p>
+            <div className="flex items-start gap-2">
+              <textarea
+                value={rawNotes}
+                onChange={(e) => setRawNotes(e.target.value)}
+                rows={2}
+                placeholder="Apuntes sueltos de la reunión (lo que se dijo, se acordó, quién hace qué)…"
+                className="w-full rounded-md border border-violet-200 bg-white px-3 py-1.5 text-sm focus:border-violet-400 focus:outline-none"
+              />
+              <VoiceButton onResult={(t) => setRawNotes((prev) => (prev ? prev + ' ' : '') + t)} />
+            </div>
+            <div className="mt-1.5 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={runAssist}
+                disabled={assisting || !rawNotes.trim()}
+                className="inline-flex items-center gap-1.5 rounded-md bg-violet-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {assisting ? <Loader2 size={13} className="animate-spin" /> : <BrainCircuit size={13} />}
+                Rellenar con IA
+              </button>
+              {assistError && <p className="text-xs text-red-700">{assistError}</p>}
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto]">
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600">Título</label>
-              <input
-                autoFocus
-                value={draft.title}
-                onChange={(e) => patch({ title: e.target.value })}
-                placeholder="Ej. Reunión de avance con tesistas"
-                className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
-              />
+              <div className="flex gap-2">
+                <input
+                  autoFocus
+                  value={draft.title}
+                  onChange={(e) => patch({ title: e.target.value })}
+                  placeholder="Ej. Reunión de avance con tesistas"
+                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
+                />
+                <VoiceButton onResult={(t) => patch({ title: (draft.title ? draft.title + ' ' : '') + t })} />
+              </div>
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600">Fecha</label>
@@ -85,35 +152,44 @@ export function MeetingModal({ meeting, projects, isNew, onClose, onSave, onDele
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600">Asistentes</label>
-              <input
-                value={draft.attendees}
-                onChange={(e) => patch({ attendees: e.target.value })}
-                placeholder="Separados por comas"
-                className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
-              />
+              <div className="flex gap-2">
+                <input
+                  value={draft.attendees}
+                  onChange={(e) => patch({ attendees: e.target.value })}
+                  placeholder="Separados por comas"
+                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
+                />
+                <VoiceButton onResult={(t) => patch({ attendees: (draft.attendees ? draft.attendees + ', ' : '') + t })} />
+              </div>
             </div>
           </div>
 
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-600">Ideas principales</label>
-            <textarea
-              value={draft.mainIdeas}
-              onChange={(e) => patch({ mainIdeas: e.target.value })}
-              rows={3}
-              placeholder="Los puntos centrales que se discutieron…"
-              className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
-            />
+            <div className="flex gap-2">
+              <textarea
+                value={draft.mainIdeas}
+                onChange={(e) => patch({ mainIdeas: e.target.value })}
+                rows={3}
+                placeholder="Los puntos centrales que se discutieron…"
+                className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
+              />
+              <VoiceButton onResult={(t) => patch({ mainIdeas: (draft.mainIdeas ? draft.mainIdeas + ' ' : '') + t })} />
+            </div>
           </div>
 
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-600">Acuerdos</label>
-            <textarea
-              value={draft.agreements}
-              onChange={(e) => patch({ agreements: e.target.value })}
-              rows={2}
-              placeholder="Qué se acordó…"
-              className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
-            />
+            <div className="flex gap-2">
+              <textarea
+                value={draft.agreements}
+                onChange={(e) => patch({ agreements: e.target.value })}
+                rows={2}
+                placeholder="Qué se acordó…"
+                className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
+              />
+              <VoiceButton onResult={(t) => patch({ agreements: (draft.agreements ? draft.agreements + ' ' : '') + t })} />
+            </div>
           </div>
 
           <div>

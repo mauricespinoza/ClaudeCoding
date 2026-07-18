@@ -16,6 +16,7 @@ export function buildBackup(state) {
       projects: state.projects,
       tasks: state.tasks,
       meetings: state.meetings ?? [],
+      notes: state.notes ?? [],
       meta: state.meta,
     },
     null,
@@ -59,6 +60,7 @@ export function parseBackupFile(rawText) {
       projects: parsed.projects,
       tasks: parsed.tasks,
       meetings: Array.isArray(parsed.meetings) ? parsed.meetings : [],
+      notes: Array.isArray(parsed.notes) ? parsed.notes : [],
       meta: parsed.meta && typeof parsed.meta === 'object' ? { ...defaultMeta(), ...parsed.meta } : defaultMeta(),
     },
   }

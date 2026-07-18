@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
-import { CalendarDays, ClipboardList, FolderKanban, GanttChart, Pencil, Users } from 'lucide-react'
+import { CalendarDays, ClipboardList, FolderKanban, GanttChart, NotebookPen, Pencil, Users } from 'lucide-react'
 import { appReducer, initialState } from './reducer.js'
 import {
   loadAll,
@@ -8,6 +8,7 @@ import {
   saveTasks,
   saveMeta,
   saveMeetings,
+  saveNotes,
   setStorageBackend,
   createDebouncedWriter,
 } from './storage.js'
@@ -19,6 +20,7 @@ import { QuickNoteWidget } from './components/QuickNoteWidget.jsx'
 import { TaskModal } from './components/TaskModal.jsx'
 import { ProjectsTab } from './components/ProjectsTab.jsx'
 import { ProjectDetailPanel } from './components/ProjectDetailPanel.jsx'
+import { NotesTab } from './components/NotesTab.jsx'
 import { CalendarView } from './components/CalendarView.jsx'
 import { GanttView } from './components/GanttView.jsx'
 import { MeetingsTab } from './components/MeetingsTab.jsx'
@@ -30,6 +32,7 @@ import { AccountControl } from './components/AccountControl.jsx'
 const TABS = [
   { key: 'tasks', label: 'Tareas', icon: ClipboardList },
   { key: 'projects', label: 'Proyectos', icon: FolderKanban },
+  { key: 'notes', label: 'Notas', icon: NotebookPen },
   { key: 'meetings', label: 'Reuniones', icon: Users },
   { key: 'calendar', label: 'Calendario', icon: CalendarDays },
   { key: 'gantt', label: 'Gantt', icon: GanttChart },
@@ -50,6 +53,7 @@ export default function App() {
   const tasksWriter = useRef(createDebouncedWriter(saveTasks))
   const metaWriter = useRef(createDebouncedWriter(saveMeta))
   const meetingsWriter = useRef(createDebouncedWriter(saveMeetings))
+  const notesWriter = useRef(createDebouncedWriter(saveNotes))
 
   // Carga inicial: si hay una sesión de nube guardada (login previo en este
   // dispositivo), se activa el backend de nube ANTES de leer; si no, se lee
@@ -101,6 +105,11 @@ export default function App() {
     meetingsWriter.current.schedule(state.meetings)
   }, [state.hydrated, state.meetings])
 
+  useEffect(() => {
+    if (!state.hydrated) return
+    notesWriter.current.schedule(state.notes)
+  }, [state.hydrated, state.notes])
+
   // Aviso de tareas vencidas/con deadline hoy al abrir la app (una vez por
   // sesión), solo si el usuario activó notificaciones en una sesión previa
   // y el permiso del navegador sigue concedido.
@@ -130,6 +139,7 @@ export default function App() {
         if (part === 'tasks') return saveTasks(nextState.tasks)
         if (part === 'projects') return saveProjects(nextState.projects)
         if (part === 'meetings') return saveMeetings(nextState.meetings)
+        if (part === 'notes') return saveNotes(nextState.notes)
         return saveMeta(nextState.meta)
       }),
     )
@@ -218,6 +228,7 @@ export default function App() {
       saveTasks(data.tasks),
       saveMeta(data.meta),
       saveMeetings(data.meetings ?? []),
+      saveNotes(data.notes ?? []),
     ])
   }
 
@@ -350,6 +361,7 @@ export default function App() {
                   onOpenTask={handleOpenTask}
                   onCreateTask={handleCreateTask}
                   onQuickVoiceCreate={handleQuickVoiceCreate}
+                  dispatchAndPersist={dispatchAndPersist}
                 />
               </>
             )}
@@ -361,6 +373,15 @@ export default function App() {
                 dispatch={dispatch}
                 onOpenProject={handleOpenProject}
                 onCreateProject={handleCreateProject}
+              />
+            )}
+            {activeTab === 'notes' && (
+              <NotesTab
+                notes={state.notes}
+                projects={projectOptions}
+                tasks={state.tasks}
+                aiConfig={state.meta.ai}
+                dispatchAndPersist={dispatchAndPersist}
               />
             )}
             {activeTab === 'meetings' && (
@@ -401,6 +422,7 @@ export default function App() {
           project={openProject.project}
           isNew={openProject.isNew}
           tasks={state.tasks}
+          notes={state.notes}
           tagColors={state.meta.tagColors}
           aiConfig={state.meta.ai}
           dispatchAndPersist={dispatchAndPersist}
@@ -416,6 +438,7 @@ export default function App() {
           meeting={openMeeting.meeting}
           isNew={openMeeting.isNew}
           projects={projectOptions}
+          aiConfig={state.meta.ai}
           onClose={() => setOpenMeeting(null)}
           onSave={handleSaveMeeting}
           onDelete={handleDeleteMeeting}

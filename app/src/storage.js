@@ -15,6 +15,7 @@ export const KEYS = {
   PROJECTS: 'app:projects',
   TASKS: 'app:tasks',
   MEETINGS: 'app:meetings',
+  NOTES: 'app:notes',
 }
 
 const localBackend = {
@@ -33,20 +34,38 @@ export function usingLocalBackend() {
 }
 
 export async function loadAll() {
-  const [meta, projects, tasks, meetings] = await Promise.all([
+  const [meta, projects, tasks, meetings, notes] = await Promise.all([
     activeBackend.get(KEYS.META),
     activeBackend.get(KEYS.PROJECTS),
     activeBackend.get(KEYS.TASKS),
     activeBackend.get(KEYS.MEETINGS),
+    activeBackend.get(KEYS.NOTES),
   ])
+
+  let finalProjects = projects ?? []
+  let finalNotes = notes ?? []
+
+  // Migración única: las notas (Idea/Dato/Hipótesis/GAP) vivían embebidas en
+  // project.ideaNotes; ahora son una colección propia para poder existir sin
+  // proyecto. `notes === null` (nunca se escribió app:notes en este backend,
+  // a diferencia de "se escribió vacío") dispara la migración exactamente
+  // una vez.
+  if (notes === null && finalProjects.some((p) => p.ideaNotes?.length)) {
+    finalNotes = finalProjects.flatMap((p) =>
+      (p.ideaNotes ?? []).map((n) => ({ ...n, projectId: p.id, updatedAt: n.updatedAt ?? n.createdAt })),
+    )
+    finalProjects = finalProjects.map(({ ideaNotes, ...rest }) => rest)
+    await Promise.all([saveNotes(finalNotes), saveProjects(finalProjects)])
+  }
 
   return {
     // Merge sobre los defaults, no reemplazo: un meta guardado antes de
     // agregar un campo nuevo (subtitle, tagColors, ai...) no debe perderlo.
     meta: { ...defaultMeta(), ...meta, ai: { ...defaultMeta().ai, ...meta?.ai } },
-    projects: projects ?? [],
+    projects: finalProjects,
     tasks: tasks ?? [],
     meetings: meetings ?? [],
+    notes: finalNotes,
   }
 }
 
@@ -66,6 +85,10 @@ export async function saveMeetings(meetings) {
   await activeBackend.set(KEYS.MEETINGS, meetings)
 }
 
+export async function saveNotes(notes) {
+  await activeBackend.set(KEYS.NOTES, notes)
+}
+
 // Copia el estado completo al backend activo (se usa al subir los datos
 // locales a la nube tras el primer login).
 export async function saveAll(state) {
@@ -74,6 +97,7 @@ export async function saveAll(state) {
     saveProjects(state.projects),
     saveTasks(state.tasks),
     saveMeetings(state.meetings),
+    saveNotes(state.notes),
   ])
 }
 

@@ -1,21 +1,41 @@
 import { useState } from 'react'
 import { Palette, Plus } from 'lucide-react'
+import { PROJECT_COLOR_TAGS } from '../model.js'
 import { ProjectCard } from './ProjectCard.jsx'
 import { TagColorSettings } from './TagColorSettings.jsx'
 
+// Dropdown de categoría (colorTag) para no saturar la vista con todos los
+// proyectos a la vez: "Todas" muestra el grid completo como antes.
 export function ProjectsTab({ projects, tasks, tagColors, dispatch, onOpenProject, onCreateProject }) {
   const [showArchived, setShowArchived] = useState(false)
   const [showColorSettings, setShowColorSettings] = useState(false)
+  const [categoryFilter, setCategoryFilter] = useState('')
 
-  const visible = projects.filter((p) => (showArchived ? true : !p.archived))
+  const visible = projects
+    .filter((p) => (showArchived ? true : !p.archived))
+    .filter((p) => !categoryFilter || p.colorTag === categoryFilter)
 
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <label className="flex items-center gap-1.5 text-xs text-gray-500">
-          <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
-          Mostrar archivados
-        </label>
+        <div className="flex flex-wrap items-center gap-3">
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="rounded-md border border-gray-300 px-2.5 py-1.5 text-xs text-gray-600 focus:border-blue-400 focus:outline-none"
+          >
+            <option value="">Todas las categorías</option>
+            {Object.entries(PROJECT_COLOR_TAGS).map(([key, v]) => (
+              <option key={key} value={key}>
+                {v.label}
+              </option>
+            ))}
+          </select>
+          <label className="flex items-center gap-1.5 text-xs text-gray-500">
+            <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+            Mostrar archivados
+          </label>
+        </div>
         <div className="flex items-center gap-2">
           <button
             type="button"

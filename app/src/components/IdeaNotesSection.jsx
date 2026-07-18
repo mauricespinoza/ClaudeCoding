@@ -3,11 +3,14 @@ import { BrainCircuit, Loader2, Plus, Trash2, X } from 'lucide-react'
 import { NOTE_CATEGORIES, emptyIdeaNote, formatDateOnly } from '../model.js'
 import { chipStyle } from '../color.js'
 import { requestNotesAnalysis } from '../aiSuggest.js'
+import { VoiceButton } from './VoiceButton.jsx'
 
 // Bitácora del proyecto: notas rápidas clasificadas como Idea/Dato/Hipótesis/
-// GAP. El botón "Analizar con IA" cruza esos niveles de evidencia y propone
-// pasos a seguir (solo lectura: nunca inserta nada por sí mismo).
-export function IdeaNotesSection({ draft, patch, tasks, aiConfig }) {
+// GAP. Viven en state.notes (colección propia, no embebidas en el proyecto)
+// filtradas por projectId, y se guardan de inmediato al agregarlas/borrarlas
+// (mismo criterio que QuickNoteWidget). El botón "Analizar con IA" cruza esos
+// niveles de evidencia y propone pasos a seguir (solo lectura).
+export function IdeaNotesSection({ project, notes, tasks, aiConfig, dispatchAndPersist }) {
   const [category, setCategory] = useState('idea')
   const [text, setText] = useState('')
   const [filter, setFilter] = useState(null)
@@ -15,25 +18,35 @@ export function IdeaNotesSection({ draft, patch, tasks, aiConfig }) {
   const [analyzing, setAnalyzing] = useState(false)
   const [error, setError] = useState(null)
 
-  const notes = draft.ideaNotes ?? []
   const visibleNotes = filter ? notes.filter((n) => n.category === filter) : notes
 
-  const addNote = () => {
+  const addNote = async () => {
     const trimmed = text.trim()
     if (!trimmed) return
-    patch({ ideaNotes: [...notes, emptyIdeaNote(category, trimmed)] })
     setText('')
+    await dispatchAndPersist(
+      { type: 'ADD_NOTE', payload: { note: emptyIdeaNote(category, trimmed, project.id) } },
+      ['notes'],
+    )
   }
 
-  const removeNote = (noteId) => {
-    patch({ ideaNotes: notes.filter((n) => n.id !== noteId) })
+  const removeNote = async (noteId) => {
+    await dispatchAndPersist({ type: 'REMOVE_NOTE', payload: { id: noteId } }, ['notes'])
   }
 
   const runAnalysis = async () => {
     setError(null)
     setAnalyzing(true)
     try {
-      setAnalysis(await requestNotesAnalysis(draft, tasks, aiConfig))
+      const projectTasks = tasks.filter((t) => t.projectId === project.id)
+      setAnalysis(
+        await requestNotesAnalysis(
+          notes,
+          projectTasks,
+          { label: `proyecto "${project.name}"`, objective: project.objective },
+          aiConfig,
+        ),
+      )
     } catch (err) {
       setError(err.message)
     } finally {
@@ -123,6 +136,7 @@ export function IdeaNotesSection({ draft, patch, tasks, aiConfig }) {
           placeholder="Nueva nota…"
           className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:border-blue-400 focus:outline-none"
         />
+        <VoiceButton onResult={(t) => setText((prev) => (prev ? prev + ' ' : '') + t)} />
         <button
           type="button"
           onClick={addNote}

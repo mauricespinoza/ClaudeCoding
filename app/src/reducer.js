@@ -18,6 +18,7 @@ export const initialState = {
   projects: [],
   tasks: [],
   meetings: [],
+  notes: [],
   meta: defaultMeta(),
 }
 
@@ -51,6 +52,7 @@ export function appReducer(state, action) {
         projects: action.payload.projects,
         tasks: action.payload.tasks,
         meetings: action.payload.meetings ?? [],
+        notes: action.payload.notes ?? [],
         meta: action.payload.meta,
       }
 
@@ -268,25 +270,22 @@ export function appReducer(state, action) {
       }
     }
 
-    // ---- Notas categorizadas del proyecto (Idea/Dato/Hipótesis/GAP) ----
+    // ---- Notas categorizadas (Idea/Dato/Hipótesis/GAP) — colección propia,
+    //      projectId nullable (nota suelta, sin proyecto). ----
 
-    case 'ADD_IDEA_NOTE':
+    case 'ADD_NOTE':
+      return { ...state, notes: [...state.notes, action.payload.note] }
+
+    case 'UPDATE_NOTE':
       return {
         ...state,
-        projects: updateProjectById(state.projects, action.payload.projectId, (p) => ({
-          ...p,
-          ideaNotes: [...(p.ideaNotes ?? []), action.payload.note],
-        })),
+        notes: state.notes.map((n) =>
+          n.id === action.payload.id ? { ...n, ...action.payload.patch, updatedAt: nowIso() } : n,
+        ),
       }
 
-    case 'REMOVE_IDEA_NOTE':
-      return {
-        ...state,
-        projects: updateProjectById(state.projects, action.payload.projectId, (p) => ({
-          ...p,
-          ideaNotes: (p.ideaNotes ?? []).filter((n) => n.id !== action.payload.noteId),
-        })),
-      }
+    case 'REMOVE_NOTE':
+      return { ...state, notes: state.notes.filter((n) => n.id !== action.payload.id) }
 
     // ---- Reuniones ----
 

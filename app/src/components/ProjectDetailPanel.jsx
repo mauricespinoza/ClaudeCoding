@@ -17,6 +17,7 @@ const IMPORTANCE_OPTIONS = [
 export function ProjectDetailPanel({
   project,
   tasks,
+  notes,
   tagColors,
   aiConfig,
   isNew,
@@ -26,7 +27,8 @@ export function ProjectDetailPanel({
   onOpenTask,
   onCreateTask,
 }) {
-  const [draft, setDraft] = useState({ notes: '', ideaNotes: [], ...project })
+  const [draft, setDraft] = useState({ notes: '', ...project })
+  const projectNotes = useMemo(() => notes.filter((n) => n.projectId === draft.id), [notes, draft.id])
   const [newActivityName, setNewActivityName] = useState('')
   const [overrideEnabled, setOverrideEnabled] = useState(project.completionOverride != null)
   const [customColorEnabled, setCustomColorEnabled] = useState(project.color != null)
@@ -155,7 +157,15 @@ export function ProjectDetailPanel({
             />
           </div>
 
-          <IdeaNotesSection draft={draft} patch={patch} tasks={tasks} aiConfig={aiConfig} />
+          {!isNew && (
+            <IdeaNotesSection
+              project={draft}
+              notes={projectNotes}
+              tasks={tasks}
+              aiConfig={aiConfig}
+              dispatchAndPersist={dispatchAndPersist}
+            />
+          )}
 
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-600">Colaboradores</label>
