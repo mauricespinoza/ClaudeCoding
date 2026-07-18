@@ -4,6 +4,7 @@ import { NOTE_CATEGORIES, emptyIdeaNote, formatDateOnly } from '../model.js'
 import { chipStyle } from '../color.js'
 import { requestNotesAnalysis } from '../aiSuggest.js'
 import { VoiceButton } from './VoiceButton.jsx'
+import { NoteImageField } from './NoteImageField.jsx'
 
 // Bitácora del proyecto: notas rápidas clasificadas como Idea/Dato/Hipótesis/
 // GAP. Viven en state.notes (colección propia, no embebidas en el proyecto)
@@ -13,6 +14,7 @@ import { VoiceButton } from './VoiceButton.jsx'
 export function IdeaNotesSection({ project, notes, tasks, aiConfig, dispatchAndPersist }) {
   const [category, setCategory] = useState('idea')
   const [text, setText] = useState('')
+  const [image, setImage] = useState(null)
   const [filter, setFilter] = useState(null)
   const [analysis, setAnalysis] = useState(null)
   const [analyzing, setAnalyzing] = useState(false)
@@ -22,10 +24,14 @@ export function IdeaNotesSection({ project, notes, tasks, aiConfig, dispatchAndP
 
   const addNote = async () => {
     const trimmed = text.trim()
-    if (!trimmed) return
+    if (!trimmed && !image) return
     setText('')
+    setImage(null)
     await dispatchAndPersist(
-      { type: 'ADD_NOTE', payload: { note: emptyIdeaNote(category, trimmed, project.id) } },
+      {
+        type: 'ADD_NOTE',
+        payload: { note: emptyIdeaNote(category, trimmed, project.id, image?.url ?? null, image?.ocrText ?? '') },
+      },
       ['notes'],
     )
   }
@@ -103,7 +109,13 @@ export function IdeaNotesSection({ project, notes, tasks, aiConfig, dispatchAndP
               <span className="mt-0.5 shrink-0 rounded-full border px-1.5 text-[10px] font-medium" style={chipStyle(cat.color)}>
                 {cat.label}
               </span>
-              <p className="min-w-0 flex-1 whitespace-pre-wrap text-xs text-gray-700">{note.text}</p>
+              {note.imageUrl && (
+                <img src={note.imageUrl} alt="Recorte de la nota" className="h-8 w-8 shrink-0 rounded border border-gray-200 object-cover" />
+              )}
+              <div className="min-w-0 flex-1">
+                {note.text && <p className="whitespace-pre-wrap text-xs text-gray-700">{note.text}</p>}
+                {note.ocrText && <p className="whitespace-pre-wrap text-[11px] italic text-gray-500">OCR: {note.ocrText}</p>}
+              </div>
               <span className="shrink-0 text-[10px] text-gray-400">{formatDateOnly(note.createdAt.slice(0, 10))}</span>
               <button
                 type="button"
@@ -117,33 +129,36 @@ export function IdeaNotesSection({ project, notes, tasks, aiConfig, dispatchAndP
         })}
       </div>
 
-      <div className="mt-2 flex gap-1.5">
-        <select
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          className="shrink-0 rounded-md border border-gray-300 px-1.5 py-1 text-xs focus:border-blue-400 focus:outline-none"
-        >
-          {Object.entries(NOTE_CATEGORIES).map(([key, cat]) => (
-            <option key={key} value={key}>
-              {cat.label}
-            </option>
-          ))}
-        </select>
-        <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addNote())}
-          placeholder="Nueva nota…"
-          className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:border-blue-400 focus:outline-none"
-        />
-        <VoiceButton onResult={(t) => setText((prev) => (prev ? prev + ' ' : '') + t)} />
-        <button
-          type="button"
-          onClick={addNote}
-          className="shrink-0 rounded-md border border-gray-300 px-2 text-gray-600 hover:bg-gray-100"
-        >
-          <Plus size={14} />
-        </button>
+      <div className="mt-2 space-y-1.5">
+        <div className="flex gap-1.5">
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            className="shrink-0 rounded-md border border-gray-300 px-1.5 py-1 text-xs focus:border-blue-400 focus:outline-none"
+          >
+            {Object.entries(NOTE_CATEGORIES).map(([key, cat]) => (
+              <option key={key} value={key}>
+                {cat.label}
+              </option>
+            ))}
+          </select>
+          <input
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addNote())}
+            placeholder="Nueva nota…"
+            className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:border-blue-400 focus:outline-none"
+          />
+          <VoiceButton onResult={(t) => setText((prev) => (prev ? prev + ' ' : '') + t)} />
+          <button
+            type="button"
+            onClick={addNote}
+            className="shrink-0 rounded-md border border-gray-300 px-2 text-gray-600 hover:bg-gray-100"
+          >
+            <Plus size={14} />
+          </button>
+        </div>
+        <NoteImageField value={image} onChange={setImage} aiConfig={aiConfig} />
       </div>
 
       {error && <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}

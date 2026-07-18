@@ -279,7 +279,8 @@ y crítico; no repitas las notas, analízalas. Máximo ~350 palabras.`
 export function buildNotesAnalysisPrompt(notes, tasks, context = {}) {
   const byCategory = { idea: [], dato: [], hipotesis: [], gap: [] }
   for (const note of notes) {
-    ;(byCategory[note.category] ?? byCategory.idea).push(note.text)
+    const line = note.ocrText ? `${note.text} [texto extraído de imagen adjunta: ${note.ocrText}]` : note.text
+    ;(byCategory[note.category] ?? byCategory.idea).push(line)
   }
 
   const taskSummary = tasks.map((t) => `- [${t.status}] ${t.name}`).join('\n')
@@ -367,6 +368,56 @@ export function parseMeetingAssist(rawText) {
     agreements: typeof parsed.agreements === 'string' ? parsed.agreements.trim() : '',
     actions,
   }
+}
+
+// ---- OCR de recortes de imagen pegados en notas --------------------------
+// Usa la visión de Gemini (multimodal, gratis con key propia) para
+// transcribir texto de una imagen. Los otros proveedores (Claude vía
+// artifacts, Ollama local) no están cableados para imágenes aquí; se pide
+// explícitamente cambiar a Gemini para esta función.
+
+export async function requestImageOCR(dataUrl, aiConfig) {
+  if (aiConfig?.provider !== 'gemini' || !aiConfig?.geminiKey) {
+    throw new Error(
+      'El OCR de imágenes usa Gemini (gratis, con key propia): cambia el proveedor de IA a Gemini y configura tu key.',
+    )
+  }
+  const match = dataUrl.match(/^data:(image\/[a-z0-9.+-]+);base64,(.*)$/i)
+  if (!match) throw new Error('Formato de imagen no reconocido.')
+  const [, mimeType, base64] = match
+
+  const model = aiConfig.geminiModel || 'gemini-2.0-flash'
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(aiConfig.geminiKey)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: 'Transcribe todo el texto visible en esta imagen (notas manuscritas, rótulos, tablas, diagramas). Responde SOLO con el texto transcrito, sin comentarios ni formato adicional.',
+              },
+              { inline_data: { mime_type: mimeType, data: base64 } },
+            ],
+          },
+        ],
+      }),
+    },
+  )
+
+  if (!response.ok) {
+    if (response.status === 400 || response.status === 403) throw new Error('Gemini rechazó la API key (¿está bien copiada?).')
+    if (response.status === 429) throw new Error('Gemini alcanzó el límite gratuito por ahora; intenta en unos minutos.')
+    throw new Error(`Gemini (OCR) respondió con error ${response.status}.`)
+  }
+
+  const data = await response.json()
+  const text = (data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('') ?? '').trim()
+  if (!text) throw new Error('Gemini no encontró texto legible en la imagen.')
+  return text
 }
 
 export async function requestMeetingAssist(rawNotes, aiConfig) {

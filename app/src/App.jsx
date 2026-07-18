@@ -354,7 +354,7 @@ export default function App() {
           <>
             {activeTab === 'tasks' && (
               <>
-                <QuickNoteWidget projects={projectOptions} dispatchAndPersist={dispatchAndPersist} />
+                <QuickNoteWidget projects={projectOptions} dispatchAndPersist={dispatchAndPersist} aiConfig={state.meta.ai} />
                 <EisenhowerMatrix
                   tasks={state.tasks}
                   projects={projectOptions}

@@ -3,26 +3,34 @@ import { NotebookPen, Plus, X } from 'lucide-react'
 import { NOTE_CATEGORIES, emptyIdeaNote } from '../model.js'
 import { chipStyle } from '../color.js'
 import { VoiceButton } from './VoiceButton.jsx'
+import { NoteImageField } from './NoteImageField.jsx'
 
 // Alta rápida de una nota de bitácora (Idea/Dato/Hipótesis/GAP) sin salir de
 // la pantalla de inicio: elige categoría y proyecto (o "Sin proyecto"),
 // escribe o dicta, listo. La bitácora completa vive en la pestaña Notas.
-export function QuickNoteWidget({ projects, dispatchAndPersist }) {
+export function QuickNoteWidget({ projects, dispatchAndPersist, aiConfig }) {
   const [open, setOpen] = useState(false)
   const [category, setCategory] = useState('idea')
   const [projectId, setProjectId] = useState('')
   const [text, setText] = useState('')
+  const [image, setImage] = useState(null)
   const [saved, setSaved] = useState(false)
 
-  const canSubmit = text.trim()
+  const canSubmit = text.trim() || image
 
   const submit = async () => {
     if (!canSubmit) return
     await dispatchAndPersist(
-      { type: 'ADD_NOTE', payload: { note: emptyIdeaNote(category, text.trim(), projectId || null) } },
+      {
+        type: 'ADD_NOTE',
+        payload: {
+          note: emptyIdeaNote(category, text.trim(), projectId || null, image?.url ?? null, image?.ocrText ?? ''),
+        },
+      },
       ['notes'],
     )
     setText('')
+    setImage(null)
     setSaved(true)
     setTimeout(() => setSaved(false), 1500)
   }
@@ -96,6 +104,9 @@ export function QuickNoteWidget({ projects, dispatchAndPersist }) {
           <Plus size={13} />
           Agregar
         </button>
+      </div>
+      <div className="mt-1.5">
+        <NoteImageField value={image} onChange={setImage} aiConfig={aiConfig} />
       </div>
       {saved && <p className="mt-1.5 text-[11px] text-emerald-600">Nota guardada.</p>}
     </div>

@@ -80,6 +80,34 @@ export async function signOut() {
   if (c) await c.auth.signOut()
 }
 
+// Bucket de Supabase Storage para recortes de imagen pegados en notas
+// (Idea/Dato/Hipótesis/GAP). El usuario lo crea una sola vez en el dashboard
+// de Supabase: Storage → New bucket → nombre "note-images" → público (así
+// getPublicUrl sirve la imagen directo, sin URLs firmadas que expiran).
+const IMAGE_BUCKET = 'note-images'
+
+export async function uploadNoteImage(blob, filename) {
+  const c = getClient()
+  if (!c) throw new Error('Inicia sesión (nube) para subir imágenes a tus notas.')
+  const {
+    data: { user },
+  } = await c.auth.getUser()
+  if (!user) throw new Error('Sesión expirada: vuelve a iniciar sesión.')
+
+  const path = `${user.id}/${filename}`
+  const { error } = await c.storage.from(IMAGE_BUCKET).upload(path, blob, {
+    upsert: true,
+    contentType: blob.type,
+  })
+  if (error) {
+    throw new Error(
+      `Error subiendo la imagen: ${error.message}. ¿Creaste el bucket público "note-images" en Storage?`,
+    )
+  }
+  const { data } = c.storage.from(IMAGE_BUCKET).getPublicUrl(path)
+  return data.publicUrl
+}
+
 // Backend clave/valor sobre la tabla kv_store, con la misma interfaz que el
 // backend local (get/set) para poder enchufarlo en storage.js.
 export function createCloudBackend() {

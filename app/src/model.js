@@ -151,9 +151,11 @@ export const NOTE_CATEGORIES = {
 // projectId: null = nota suelta, sin proyecto asociado (visible solo en la
 // pestaña Notas). Antes vivían embebidas en project.ideaNotes; ahora son una
 // colección propia (state.notes) para poder existir sin proyecto.
-export function emptyIdeaNote(category, text, projectId = null) {
+// imageUrl: recorte pegado (URL de Supabase Storage, o data URL en modo
+// local); ocrText: texto extraído de esa imagen vía IA (opcional).
+export function emptyIdeaNote(category, text, projectId = null, imageUrl = null, ocrText = '') {
   const ts = nowIso()
-  return { id: newNoteId(), category, text, projectId, createdAt: ts, updatedAt: ts }
+  return { id: newNoteId(), category, text, projectId, imageUrl, ocrText, createdAt: ts, updatedAt: ts }
 }
 
 export function emptyMeetingAction() {
