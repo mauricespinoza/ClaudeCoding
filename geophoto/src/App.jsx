@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Camera, Loader2, Settings, Trash2, Waypoints } from 'lucide-react'
+import { Camera, Loader2, Settings, Trash2, Upload, Waypoints } from 'lucide-react'
 import ImportPanel from './components/ImportPanel'
 import MapPanel from './components/MapPanel'
 import PhotoTable from './components/PhotoTable'
@@ -20,10 +20,48 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [showKml, setShowKml] = useState(false)
   const [storage, setStorage] = useState(null)
+  const [dropActive, setDropActive] = useState(false)
 
   useEffect(() => {
     storageEstimate().then(setStorage)
   }, [lib.photos.length])
+
+  // Soltar archivos o .zip en cualquier parte de la ventana los importa.
+  useEffect(() => {
+    let depth = 0
+    const hasFiles = (e) => Array.from(e.dataTransfer?.types || []).includes('Files')
+    const onEnter = (e) => {
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      depth += 1
+      setDropActive(true)
+    }
+    const onOver = (e) => {
+      if (hasFiles(e)) e.preventDefault()
+    }
+    const onLeave = (e) => {
+      if (!hasFiles(e)) return
+      depth = Math.max(0, depth - 1)
+      if (depth === 0) setDropActive(false)
+    }
+    const onDrop = (e) => {
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      depth = 0
+      setDropActive(false)
+      if (e.dataTransfer.files?.length) lib.addFiles(e.dataTransfer.files)
+    }
+    window.addEventListener('dragenter', onEnter)
+    window.addEventListener('dragover', onOver)
+    window.addEventListener('dragleave', onLeave)
+    window.addEventListener('drop', onDrop)
+    return () => {
+      window.removeEventListener('dragenter', onEnter)
+      window.removeEventListener('dragover', onOver)
+      window.removeEventListener('dragleave', onLeave)
+      window.removeEventListener('drop', onDrop)
+    }
+  }, [lib])
 
   const persistSettings = useCallback((next) => {
     setSettings(next)
@@ -174,6 +212,18 @@ export default function App() {
           </div>
         </main>
       </div>
+
+      {dropActive && (
+        <div className="pointer-events-none fixed inset-0 z-[120] flex items-center justify-center bg-ink-900/80 backdrop-blur-sm">
+          <div className="rounded-2xl border-2 border-dashed border-sky-500 bg-ink-800/90 px-10 py-8 text-center">
+            <Upload size={34} className="mx-auto mb-2 text-sky-400" />
+            <p className="text-sm font-semibold text-slate-100">Suelta para importar</p>
+            <p className="mt-1 text-xs text-slate-400">
+              Fotos sueltas, carpetas o un .zip descargado de Google Photos
+            </p>
+          </div>
+        </div>
+      )}
 
       <SettingsModal
         open={showSettings}

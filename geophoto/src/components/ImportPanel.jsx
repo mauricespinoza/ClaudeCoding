@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { AlertTriangle, FolderUp, Link2, Loader2, Upload } from 'lucide-react'
+import { AlertTriangle, FileArchive, FolderUp, Link2, Loader2, Upload } from 'lucide-react'
 import { isGooglePhotosUrl, listAlbumPhotos, parsePastedUrls, toOriginalUrl } from '../lib/googlePhotos'
 
 export default function ImportPanel({ onFiles, onUrls, corsProxy, progress, onOpenSettings }) {
@@ -12,10 +12,27 @@ export default function ImportPanel({ onFiles, onUrls, corsProxy, progress, onOp
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
 
+  const runImport = async (files) => {
+    setMsg(null)
+    const res = await onFiles(files)
+    if (!res) return
+    const { added = [], errors = [], sidecarGeo = 0 } = res
+    if (!added.length && !errors.length) return
+    setMsg({
+      kind: errors.length ? (added.length ? 'warn' : 'error') : 'ok',
+      text:
+        `${added.length} fotos importadas` +
+        (sidecarGeo ? `, ${sidecarGeo} con coordenadas recuperadas del .json de Google` : '') +
+        (errors.length ? `, ${errors.length} con error` : '') +
+        '.',
+      detail: errors.slice(0, 4).join('\n'),
+    })
+  }
+
   const handleDrop = (e) => {
     e.preventDefault()
     setDragging(false)
-    if (e.dataTransfer.files?.length) onFiles(e.dataTransfer.files)
+    if (e.dataTransfer.files?.length) runImport(e.dataTransfer.files)
   }
 
   const importAlbum = async () => {
@@ -95,7 +112,8 @@ export default function ImportPanel({ onFiles, onUrls, corsProxy, progress, onOp
         >
           <Upload size={22} className="text-slate-400" />
           <p className="text-xs text-slate-400">
-            Arrastra fotos aquí. Se lee el EXIF (GPS, rumbo, focal) al importarlas.
+            Arrastra fotos o un <b className="text-slate-200">.zip</b> aquí. Se lee el EXIF (GPS,
+            rumbo, focal) al importarlas.
           </p>
           <div className="flex gap-2">
             <button type="button" className="btn btn-primary" onClick={() => fileRef.current?.click()}>
@@ -105,14 +123,23 @@ export default function ImportPanel({ onFiles, onUrls, corsProxy, progress, onOp
               <FolderUp size={13} /> Carpeta
             </button>
           </div>
+          <div className="flex items-start gap-2 rounded-md border border-sky-800/60 bg-sky-950/40 p-2 text-left text-[11px] leading-relaxed text-sky-200">
+            <FileArchive size={14} className="mt-0.5 shrink-0" />
+            <div>
+              <b>Álbum de Google Photos:</b> ábrelo en la web, selecciona las fotos y descárgalas —
+              te llega un <code>.zip</code> que puedes soltar aquí tal cual. Si las fotos vienen sin
+              EXIF, se leen las coordenadas del <code>.json</code> que Google incluye junto a cada
+              una.
+            </div>
+          </div>
           <input
             ref={fileRef}
             type="file"
-            accept="image/*"
+            accept="image/*,.zip,application/zip"
             multiple
             className="hidden"
             onChange={(e) => {
-              onFiles(e.target.files)
+              runImport(e.target.files)
               e.target.value = ''
             }}
           />
@@ -124,7 +151,7 @@ export default function ImportPanel({ onFiles, onUrls, corsProxy, progress, onOp
             multiple
             className="hidden"
             onChange={(e) => {
-              onFiles(e.target.files)
+              runImport(e.target.files)
               e.target.value = ''
             }}
           />
@@ -155,12 +182,19 @@ export default function ImportPanel({ onFiles, onUrls, corsProxy, progress, onOp
             <AlertTriangle size={14} className="mt-0.5 shrink-0" />
             <div>
               Google Photos no envía cabeceras CORS, así que el navegador no puede leer el álbum
-              directamente. Configura un <b>proxy CORS</b> en Ajustes (
-              <code>https://tu-proxy/?url={'{url}'}</code>) o usa la pestaña «URLs de imágenes».
-              El álbum debe estar compartido como «cualquiera con el enlace».
+              directamente. Aunque funcione con un <b>proxy CORS</b> (configurable en Ajustes),
+              Google suele servir las imágenes <b>sin EXIF</b>, por lo que se pierde el GPS.
+              <div className="mt-1.5 border-t border-amber-700/40 pt-1.5">
+                <b>Camino recomendado:</b> descarga el álbum desde Google Photos y suelta el{' '}
+                <code>.zip</code> en la pestaña «Desde el PC». Conserva los originales con su EXIF y
+                recupera las coordenadas del <code>.json</code> de Google si hiciera falta.
+                <button type="button" className="btn btn-ghost ml-1 py-0" onClick={() => setTab('local')}>
+                  Ir ahí
+                </button>
+              </div>
               {!corsProxy && (
-                <button type="button" className="btn btn-ghost ml-1 py-0" onClick={onOpenSettings}>
-                  Abrir ajustes
+                <button type="button" className="btn btn-ghost mt-1 py-0" onClick={onOpenSettings}>
+                  Configurar proxy igualmente
                 </button>
               )}
             </div>

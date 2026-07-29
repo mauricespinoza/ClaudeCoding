@@ -150,8 +150,31 @@ export function blobToDataUrl(blob) {
  * Convierte un archivo/blob en un registro completo de foto.
  * `origin` describe la procedencia ('upload' | 'google-photos' | 'url').
  */
-export async function ingestBlob(blob, { name, origin = 'upload', sourceUrl = null } = {}) {
+/**
+ * Completa con `fallback` (p. ej. el sidecar JSON de Google Takeout) solo los
+ * campos que el EXIF no trae. El EXIF de la propia foto siempre tiene prioridad.
+ */
+function mergeFallback(exif, fallback) {
+  if (!fallback) return { ...exif, locationSource: exif.lat != null ? 'exif' : null }
+  const out = { ...exif }
+  if (out.lat == null && out.lon == null && Number.isFinite(fallback.lat)) {
+    out.lat = fallback.lat
+    out.lon = fallback.lon
+    out.locationSource = fallback.locationSource || 'sidecar'
+  } else if (out.lat != null) {
+    out.locationSource = 'exif'
+  }
+  if (out.altitude == null && Number.isFinite(fallback.altitude)) out.altitude = fallback.altitude
+  if (!out.takenAt && fallback.takenAt) out.takenAt = fallback.takenAt
+  return out
+}
+
+export async function ingestBlob(
+  blob,
+  { name, origin = 'upload', sourceUrl = null, fallback = null } = {}
+) {
   const exif = await readExif(blob)
+  const merged = mergeFallback(exif, fallback)
   const thumb = await makeThumbnail(blob)
   const id = uid()
   const meta = {
@@ -166,10 +189,10 @@ export async function ingestBlob(blob, { name, origin = 'upload', sourceUrl = nu
     thumbWidth: thumb.width,
     thumbHeight: thumb.height,
     addedAt: new Date().toISOString(),
-    ...exif,
+    ...merged,
     manualLocation: false,
     title: '',
-    description: '',
+    description: fallback?.description || '',
     annotations: null, // documento del editor vectorial
     hasAnnotatedRender: false,
   }

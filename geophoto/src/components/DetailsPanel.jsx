@@ -106,7 +106,11 @@ export default function DetailsPanel({ photo, thumbUrl, compassPoints, onUpdateM
             <>
               <Row label="DMS">{toDMS(photo.lat, true)} {toDMS(photo.lon, false)}</Row>
               <Row label="Origen">
-                {photo.manualLocation ? 'Ubicación manual' : 'GPS del EXIF'}
+                {photo.manualLocation
+                  ? 'Ubicación manual'
+                  : photo.locationSource === 'takeout'
+                    ? 'JSON de Google Takeout'
+                    : 'GPS del EXIF'}
               </Row>
             </>
           )}

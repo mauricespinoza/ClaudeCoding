@@ -10,9 +10,16 @@ salvo que tú las exportes.
 
 ### 1. Ingesta de fotos
 
-- **Desde el PC**: arrastrar y soltar, selector de archivos o carpeta completa.
-  Al importar se lee el EXIF: GPS (lat/lon/altitud), rumbo de cámara (`GPSImgDirection`),
-  focal equivalente a 35 mm, fecha, cámara y orientación.
+- **Desde el PC**: arrastrar y soltar en cualquier parte de la ventana, selector de
+  archivos o carpeta completa. Al importar se lee el EXIF: GPS (lat/lon/altitud), rumbo
+  de cámara (`GPSImgDirection`), focal equivalente a 35 mm, fecha, cámara y orientación.
+- **Archivos `.zip`** (la vía recomendada para Google Photos): se descomprimen en el
+  navegador y se importan todas sus imágenes. Si el `.zip` viene de Google Photos o de
+  Google Takeout, se leen además los **sidecar JSON** que Google incluye junto a cada foto
+  (`IMG_1234.jpg.json` o `IMG_1234.jpg.supplemental-metadata.json`) para recuperar las
+  coordenadas y la fecha **aunque el JPEG venga sin EXIF**, que es lo habitual al
+  descargar desde la web. El EXIF de la foto siempre tiene prioridad sobre el sidecar;
+  las posiciones `0,0` que Google escribe cuando no conoce la ubicación se descartan.
 - **Google Photos**: pegando el enlace de un álbum compartido. Google Photos no envía
   cabeceras CORS, así que el navegador no puede leer el álbum por sí solo; hay que
   configurar un **proxy CORS** en Ajustes (`https://mi-proxy/?url={url}`). Las imágenes se
@@ -123,6 +130,9 @@ un sitio distinto para esta.
 
 - Google Photos no permite lectura directa desde el navegador (CORS); requiere proxy.
   Además, las imágenes servidas por Google Photos suelen venir sin GPS salvo que se pidan
-  como original (`=d`) y el álbum lo permita.
+  como original (`=d`) y el álbum lo permita. **Por eso la vía recomendada es descargar el
+  álbum y soltar el `.zip`**, que conserva los originales y sus sidecar JSON.
+- El `.zip` se descomprime en memoria: archivos de varios GB pueden agotar la memoria de
+  la pestaña. Para exports muy grandes, divídelos en varios `.zip`.
 - Los formatos HEIC/HEIF no se decodifican; conviértelos a JPEG antes de importarlos.
 - El TIFF se escribe sin compresión, por lo que los archivos son grandes.

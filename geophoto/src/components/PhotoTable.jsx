@@ -162,8 +162,26 @@ export default function PhotoTable({
                     </td>
                     <td className="px-2 py-2">
                       {hasPos ? (
-                        <span className="flex items-center gap-1 text-slate-300">
-                          <MapPin size={11} className={p.manualLocation ? 'text-amber-400' : 'text-emerald-400'} />
+                        <span
+                          className="flex items-center gap-1 text-slate-300"
+                          title={
+                            p.manualLocation
+                              ? 'Ubicación asignada a mano'
+                              : p.locationSource === 'takeout'
+                                ? 'Coordenadas del JSON de Google Takeout'
+                                : 'GPS del EXIF de la foto'
+                          }
+                        >
+                          <MapPin
+                            size={11}
+                            className={
+                              p.manualLocation
+                                ? 'text-amber-400'
+                                : p.locationSource === 'takeout'
+                                  ? 'text-sky-400'
+                                  : 'text-emerald-400'
+                            }
+                          />
                           {formatLatLon(p.lat, p.lon, 5)}
                         </span>
                       ) : (

@@ -9,6 +9,7 @@ import {
   putPhotoMeta,
 } from './db'
 import { fetchImageBlob, ingestBlob } from './images'
+import { extractImagesFromZip, isImageFile, isZipFile } from './zipImport'
 
 export function usePhotoLibrary() {
   const [photos, setPhotos] = useState([])
@@ -69,22 +70,55 @@ export function usePhotoLibrary() {
     []
   )
 
-  /** Importa archivos locales. Devuelve { added, errors }. */
+  /**
+   * Importa archivos locales. Los .zip se descomprimen en memoria y sus
+   * imágenes se importan junto con el resto.
+   * Devuelve { added, errors, sidecarGeo }.
+   */
   const addFiles = useCallback(
     async (fileList) => {
-      const files = Array.from(fileList).filter((f) => /^image\//.test(f.type) || /\.(jpe?g|png|tiff?|webp)$/i.test(f.name))
+      const all = Array.from(fileList)
       const errors = []
       const added = []
-      for (let i = 0; i < files.length; i++) {
-        setProgress({ done: i, total: files.length, label: files[i].name })
+
+      // Cada entrada expone getBlob() para extraer el contenido solo cuando toca.
+      const entries = all
+        .filter((f) => !isZipFile(f) && isImageFile(f))
+        .map((f) => ({ name: f.name, origin: 'upload', fallback: null, getBlob: async () => f }))
+
+      for (const zip of all.filter(isZipFile)) {
+        setProgress({ done: 0, total: 1, label: `Descomprimiendo ${zip.name}…` })
         try {
-          added.push(await addOne(files[i], { name: files[i].name, origin: 'upload' }))
+          entries.push(...(await extractImagesFromZip(zip)))
         } catch (err) {
-          errors.push(`${files[i].name}: ${err.message}`)
+          errors.push(`${zip.name}: ${err.message}`)
+        }
+      }
+
+      if (!entries.length) {
+        setProgress(null)
+        return { added, errors, sidecarGeo: 0 }
+      }
+
+      let sidecarGeo = 0
+      for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i]
+        setProgress({ done: i, total: entries.length, label: entry.name })
+        try {
+          const blob = await entry.getBlob()
+          const meta = await addOne(blob, {
+            name: entry.name,
+            origin: entry.origin,
+            fallback: entry.fallback,
+          })
+          if (meta.locationSource === 'takeout') sidecarGeo += 1
+          added.push(meta)
+        } catch (err) {
+          errors.push(`${entry.name}: ${err.message}`)
         }
       }
       setProgress(null)
-      return { added, errors }
+      return { added, errors, sidecarGeo }
     },
     [addOne]
   )
