@@ -1,5 +1,7 @@
 # Ajedrez de Batalla 3D
 
+🌐 **Jugar:** https://mauricespinoza.github.io/ClaudeCoding/chess/
+
 Ajedrez completo en 3D donde las piezas son guerreros animados: caminan hasta su
 casilla, se baten en duelo cuando hay captura y caen destrozadas o se desvanecen
 en un remolino de brasas. Pensado para jugarse con el dedo en una tablet o con el

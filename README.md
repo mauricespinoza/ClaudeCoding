@@ -1,6 +1,8 @@
 # ClaudeCoding
 pruebas de codigos
 
+🌐 **Sitio en vivo:** https://mauricespinoza.github.io/ClaudeCoding/
+
 ## Apps
 
 - [`app/`](app) — gestor de tareas académico (proyectos, tareas, notas, reuniones).

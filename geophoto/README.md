@@ -1,5 +1,7 @@
 # GeoPhoto Studio
 
+🌐 **Usar:** https://mauricespinoza.github.io/ClaudeCoding/geophoto/
+
 App web para gestionar fotografías con metadata de localización: mapa, exportación a
 Google Earth (KML/KMZ) y editor vectorial de anotaciones con rótulos de rumbo.
 

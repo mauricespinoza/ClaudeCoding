@@ -1,0 +1,77 @@
+name: Deploy Pages (chess + geophoto)
+
+# Un solo workflow para todo el sitio de Pages: actions/deploy-pages reemplaza
+# el sitio completo en cada ejecución, así que no puede haber un workflow por
+# app (el último en correr borraría a los demás). Este construye GeoPhoto
+# Studio, copia el ajedrez (estático, sin build) y agrega una página de inicio.
+
+on:
+  push:
+    branches: [main, claude/zen-dirac-fj3fl5]
+    paths:
+      - 'chess/**'
+      - 'geophoto/**'
+      - 'pages/**'
+      - '.github/workflows/deploy-pages.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: geophoto/package-lock.json
+
+      - name: Build GeoPhoto Studio
+        working-directory: geophoto
+        run: |
+          npm ci
+          npm run build
+        env:
+          GITHUB_PAGES: 'true'
+
+      - name: Assemble site
+        run: |
+          mkdir -p _site
+          cp pages/index.html _site/index.html
+
+          mkdir -p _site/geophoto
+          cp -r geophoto/dist/. _site/geophoto/
+
+          # El ajedrez no tiene build: es HTML/CSS/JS estático servido tal cual.
+          mkdir -p _site/chess
+          cp chess/index.html chess/styles.css _site/chess/
+          cp -r chess/src _site/chess/src
+          cp -r chess/vendor _site/chess/vendor
+
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
