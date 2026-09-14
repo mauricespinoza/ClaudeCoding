@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#0a0c14">
+<meta name="description" content="Ajedrez 3D con piezas animadas que combaten entre sí. Jugable en PC y tablet.">
+<title>Ajedrez de Batalla 3D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>♞</text></svg>">
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/three.module.min.js",
+    "three/addons/": "./vendor/three/addons/"
+  }
+}
+</script>
+</head>
+<body>
+
+<canvas id="scene"></canvas>
+
+<header id="topbar">
+  <h1>Ajedrez de Batalla <span>3D</span></h1>
+  <div id="status-box">
+    <strong id="status">Preparando el campo…</strong>
+    <small id="status-sub"></small>
+  </div>
+  <div class="top-actions">
+    <button id="btn-sound" class="icon" title="Sonido">🔊</button>
+    <button id="panel-toggle" class="icon" title="Panel de mando" aria-label="Panel de mando">☰</button>
+  </div>
+</header>
+
+<div id="hud">
+  <div class="side" id="turn-w">
+    <span class="dot w"></span>
+    <div>
+      <b>Orden del Alba</b>
+      <div class="cap-row"><span id="captured-b" class="captured"></span><span id="adv-w" class="adv"></span></div>
+    </div>
+  </div>
+  <div class="side" id="turn-b">
+    <span class="dot b"></span>
+    <div>
+      <b>Legión de Obsidiana</b>
+      <div class="cap-row"><span id="captured-w" class="captured"></span><span id="adv-b" class="adv"></span></div>
+    </div>
+  </div>
+  <div id="thinking"><span></span><span></span><span></span></div>
+</div>
+
+<div id="quickbar">
+  <button id="btn-undo" title="Deshacer (U)">↶ Deshacer</button>
+  <button id="btn-hint" title="Pista (H)">✦ Pista</button>
+  <button id="btn-flip" title="Girar tablero (F)">⇅ Girar</button>
+  <button id="btn-view" title="Vista cenital">⌖ Vista</button>
+</div>
+
+<aside id="panel">
+  <div class="panel-head">
+    <h2>Panel de mando</h2>
+    <button class="icon" data-close-panel aria-label="Cerrar">✕</button>
+  </div>
+
+  <section>
+    <h3>Partida</h3>
+    <div class="controls">
+      <label>Modo
+        <select id="sel-mode">
+          <option value="ai">Contra la máquina</option>
+          <option value="local">Dos jugadores</option>
+          <option value="demo">Máquina vs máquina</option>
+        </select>
+      </label>
+      <label>Nivel
+        <select id="sel-level">
+          <option value="1">1 · Escudero</option>
+          <option value="2">2 · Caballero</option>
+          <option value="3">3 · Capitán</option>
+          <option value="4">4 · General</option>
+          <option value="5">5 · Archimago</option>
+        </select>
+      </label>
+      <label>Juego con
+        <select id="sel-color">
+          <option value="w">Blancas</option>
+          <option value="b">Negras</option>
+        </select>
+      </label>
+    </div>
+    <button id="btn-new" class="primary">⚔ Nueva partida</button>
+  </section>
+
+  <section>
+    <h3>Jugadas</h3>
+    <ol id="move-list"></ol>
+  </section>
+
+  <section>
+    <h3>Ajustes</h3>
+    <div class="controls">
+      <label>Velocidad
+        <select id="sel-speed">
+          <option value="0.7">Cinematográfica</option>
+          <option value="1">Normal</option>
+          <option value="1.6">Rápida</option>
+          <option value="2.4">Relámpago</option>
+        </select>
+      </label>
+      <label>Calidad
+        <select id="sel-quality">
+          <option value="high">Alta (con brillo)</option>
+          <option value="medium">Media</option>
+          <option value="low">Baja (tablets lentas)</option>
+        </select>
+      </label>
+    </div>
+  </section>
+
+  <section class="help">
+    <h3>Controles</h3>
+    <ul>
+      <li><b>Tocar / clic</b> en una pieza: ver sus movimientos legales.</li>
+      <li><b>Tocar</b> una casilla marcada: mover y, si hay enemigo, combatir.</li>
+      <li><b>Arrastrar</b> en el fondo: girar la cámara. <b>Pellizcar</b> o rueda: acercar.</li>
+      <li>Teclas: <b>N</b> nueva · <b>U</b> deshacer · <b>H</b> pista · <b>F</b> girar.</li>
+    </ul>
+  </section>
+</aside>
+
+<div id="promo">
+  <div class="dialog">
+    <h2>Coronación</h2>
+    <p>El peón ha cruzado el campo. ¿En qué se convierte?</p>
+    <div id="promo-choices"></div>
+  </div>
+</div>
+
+<div id="overlay">
+  <div class="dialog">
+    <h2 id="overlay-title"></h2>
+    <p id="overlay-sub"></p>
+    <div class="row">
+      <button id="btn-restart" class="primary">Nueva partida</button>
+      <button id="btn-close-overlay">Ver el tablero</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<div id="loading">
+  <div class="spin">♞</div>
+  <p>Forjando el ejército…</p>
+</div>
+
+<script type="module" src="src/main.js"></script>
+<script type="module">
+  // Aviso si el navegador no soporta módulos + WebGL
+  const gl = document.createElement('canvas').getContext('webgl2')
+    || document.createElement('canvas').getContext('webgl');
+  if (!gl) {
+    document.getElementById('loading').innerHTML =
+      '<p>Este navegador no soporta WebGL. Prueba con Chrome, Edge, Safari o Firefox actualizados.</p>';
+    document.getElementById('loading').classList.remove('done');
+  }
+</script>
+</body>
+</html>
