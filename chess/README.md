@@ -21,6 +21,10 @@ python3 -m http.server 8000     # o: npx http-server -p 8000
 Y abrir <http://localhost:8000>. También se puede publicar tal cual en GitHub
 Pages, Netlify, Vercel o cualquier hosting estático.
 
+`node tools/build-artifact.mjs --wrap` genera además una variante de una sola
+página (`dist/artifact.html`, con el CSS incrustado) para publicarla como
+Artifact de Claude, y un `preview.html` para comprobarla en local.
+
 ## Qué hace
 
 **Ajedrez de verdad.** Motor propio con todas las reglas: enroque corto y largo,
